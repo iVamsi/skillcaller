@@ -1,0 +1,7 @@
+skill: writing-compose-ui
+runs: 5
+should_trigger:
+  - "add a compose screen for settings"
+  - "build a composable list row"
+should_not_trigger:
+  - "write a kotlin extension function for lists"

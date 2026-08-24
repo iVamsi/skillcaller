@@ -1,0 +1,57 @@
+{
+  "name": "skillcaller",
+  "version": "0.1.0",
+  "description": "Trigger-reliability eval harness for Agent Skills: proves your skills fire when they should and stay silent when they shouldn't.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "author": "Vamsi Vaddavalli (https://github.com/iVamsi)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iVamsi/skillcaller.git"
+  },
+  "keywords": [
+    "agent-skills",
+    "skills",
+    "evals",
+    "claude-code",
+    "codex",
+    "cursor",
+    "antigravity",
+    "ai-agents",
+    "skill-md",
+    "trigger",
+    "testing"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "skillcaller": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run --coverage",
+    "test:watch": "vitest",
+    "smoke": "vitest run --config vitest.smoke.config.ts",
+    "lint": "eslint src test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "commander": "14.0.2",
+    "picocolors": "1.1.1",
+    "yaml": "2.9.0",
+    "zod": "4.1.12"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.1",
+    "@types/node": "22.19.0",
+    "@vitest/coverage-v8": "3.2.7",
+    "eslint": "9.39.1",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.46.4",
+    "vitest": "3.2.7"
+  }
+}

@@ -1,0 +1,37 @@
+name: Release
+
+# Manual publish via npm trusted publishing (OIDC). No laptop tokens.
+on:
+  # A published GitHub release triggers the same gated job. Scorecard's Packaging check looks for
+  # a release-driven publish workflow, and this keeps the manual path available too.
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "publish" to confirm'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    if: github.event_name == 'release' || inputs.confirm == 'publish'
+    runs-on: ubuntu-latest
+    environment: npm-publish
+    permissions:
+      contents: read
+      id-token: write # required for npm provenance
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - run: npm publish --provenance --access public

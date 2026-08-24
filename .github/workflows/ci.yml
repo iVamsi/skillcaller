@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      # Demo pack is meant to fail; assert the report, not a green exit.
+      - name: End-to-end run against the fake agent
+        run: |
+          set -o pipefail
+          node dist/cli.js run examples/mini-pack \
+            --agent fake --script examples/mini-pack/fake-script.json \
+            --format markdown --no-cache > report.md && exit_code=0 || exit_code=$?
+          cat report.md
+          test "$exit_code" = "1" || { echo "expected exit 1 from the demo pack, got $exit_code"; exit 1; }
+          grep -q "writing-compose-ui" report.md || { echo "report is missing the failing skill"; exit 1; }
+          grep -qi "collision" report.md || { echo "report is missing the collision section"; exit 1; }
+      - run: npm audit --audit-level=moderate
