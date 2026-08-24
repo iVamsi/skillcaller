@@ -1,0 +1,7 @@
+{
+  "add a compose screen for settings": [["writing-compose-ui"], ["writing-compose-previews"], ["writing-compose-ui"], ["writing-compose-previews"], ["writing-compose-ui"]],
+  "build a composable list row": [["writing-compose-ui"]],
+  "write a kotlin extension function for lists": [[]],
+  "add previews for this composable in light and dark": [["writing-compose-previews"]],
+  "rename this gradle module": [[]]
+}

@@ -1,0 +1,6 @@
+skill: writing-compose-previews
+runs: 5
+should_trigger:
+  - "add previews for this composable in light and dark"
+should_not_trigger:
+  - "rename this gradle module"
