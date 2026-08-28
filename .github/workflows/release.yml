@@ -1,6 +1,7 @@
 name: Release
 
 # Manual publish via npm trusted publishing (OIDC). No laptop tokens.
+# npm ≥ 11.5.1 (Node 24). Skip registry-url: setup-node v5's dummy token blocks OIDC.
 on:
   # A published GitHub release triggers the same gated job. Scorecard's Packaging check looks for
   # a release-driven publish workflow, and this keeps the manual path available too.
@@ -27,8 +28,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
-          node-version: 22
-          registry-url: https://registry.npmjs.org
+          node-version: 24
       - run: npm ci --ignore-scripts
       - run: npm run typecheck
       - run: npm run lint
