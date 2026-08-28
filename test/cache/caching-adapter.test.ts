@@ -198,5 +198,21 @@ describe("CachingAdapter", () => {
     expect(calls()).toBe(1);
     expect(second.invokedSkills).toEqual(first.invokedSkills);
   });
+
+  it("forwards close to the inner adapter", async () => {
+    let closed = 0;
+    const adapter: AgentAdapter = {
+      id: "inner",
+      runPrompt: () => Promise.resolve({ invokedSkills: [], usable: true, costUsd: 0 }),
+      close: () => {
+        closed += 1;
+        return Promise.resolve();
+      },
+    };
+
+    await new CachingAdapter(adapter, cacheDir()).close();
+
+    expect(closed).toBe(1);
+  });
 });
 

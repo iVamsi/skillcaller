@@ -10,4 +10,5 @@ export interface RunRequest {
 export interface AgentAdapter {
   readonly id: string;
   runPrompt(request: RunRequest): Promise<RunOutcome>;
+  close?(): Promise<void>;
 }

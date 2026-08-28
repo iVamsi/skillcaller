@@ -43,8 +43,8 @@ directory and offer no override that keeps authentication working, so those read
 contamination: they are never counted as hits, they appear in every report format, and they fail
 the skill rather than letting a contaminated run look clean.
 
-Antigravity CLI ignores workspace `.agents/skills`. Each run installs the pack as a uniquely named
-plugin under `~/.gemini/config/plugins` and uninstalls it afterwards. A killed process can leave a
+Antigravity CLI ignores workspace `.agents/skills`. A pack run installs the pack once as a uniquely named
+plugin under `~/.gemini/config/plugins` and uninstalls it when the run finishes. A killed process can leave a
 plugin whose name starts with `sc`; remove it with `agy plugin uninstall`.
 
 The corpus never travels with the pack. `evals/triggers.yaml` lists the prompts that are supposed

@@ -26,6 +26,7 @@ if (argv[0] === "plugin") {
     const manifest = JSON.parse(readFileSync(join(pluginDir, "plugin.json"), "utf8"));
     const skillsDir = join(pluginDir, "skills");
     log.installArgv = argv;
+    log.installCount = (log.installCount ?? 0) + 1;
     log.pluginDir = pluginDir;
     log.name = manifest.name;
     log.visibleSkills = existsSync(skillsDir) ? readdirSync(skillsDir) : [];
@@ -36,6 +37,7 @@ if (argv[0] === "plugin") {
   }
   if (argv[1] === "uninstall") {
     log.uninstallArgv = argv;
+    log.uninstallCount = (log.uninstallCount ?? 0) + 1;
     writeFileSync(logPath, JSON.stringify(log));
     process.exit(0);
   }
@@ -79,24 +81,29 @@ process.stdout.write([
 
   it("installs a plugin, runs sandboxed print mode, and removes the workspace", async () => {
     const stub = stubCli(`process.stdout.write(JSON.stringify({ event: "result", result: { status: "SUCCESS" } }));`);
-    await new AntigravityAdapter({ binary: stub.path }).runPrompt({ prompt: "hi", packDir: packWith("alpha") });
+    const adapter = new AntigravityAdapter({ binary: stub.path });
+    await adapter.runPrompt({ prompt: "hi", packDir: packWith("alpha") });
 
-    const log = JSON.parse(readFileSync(stub.logPath, "utf8")) as {
+    const during = JSON.parse(readFileSync(stub.logPath, "utf8")) as {
       installArgv: string[];
-      uninstallArgv: string[];
+      uninstallArgv?: string[];
       printArgv: string[];
       visibleSkills: string[];
       name: string;
       printCwd: string;
     };
-    expect(log.visibleSkills).toEqual(["alpha"]);
-    expect(log.installArgv[0]).toBe("plugin");
-    expect(log.installArgv[1]).toBe("install");
-    expect(log.uninstallArgv).toEqual(["plugin", "uninstall", log.name]);
-    expect(log.printArgv).toEqual(expect.arrayContaining(["-p", "--output-format", "stream-json", "--sandbox"]));
-    expect(log.printArgv[log.printArgv.indexOf("-p") + 1]).toBe("hi");
-    expect(log.printArgv).not.toContain("--dangerously-skip-permissions");
-    expect(existsSync(log.printCwd)).toBe(false);
+    expect(during.visibleSkills).toEqual(["alpha"]);
+    expect(during.installArgv[0]).toBe("plugin");
+    expect(during.installArgv[1]).toBe("install");
+    expect(during.uninstallArgv).toBeUndefined();
+    expect(during.printArgv).toEqual(expect.arrayContaining(["-p", "--output-format", "stream-json", "--sandbox"]));
+    expect(during.printArgv[during.printArgv.indexOf("-p") + 1]).toBe("hi");
+    expect(during.printArgv).not.toContain("--dangerously-skip-permissions");
+    expect(existsSync(during.printCwd)).toBe(false);
+
+    await adapter.close();
+    const after = JSON.parse(readFileSync(stub.logPath, "utf8")) as { uninstallArgv: string[]; name: string };
+    expect(after.uninstallArgv).toEqual(["plugin", "uninstall", after.name]);
   });
 
   it("keeps the corpus out of the plugin", async () => {
@@ -130,13 +137,36 @@ process.stdout.write([
     expect(outcome.unusableReason).toMatch(/boom|exit/i);
   });
 
+  it("installs the plugin once for a pack and uninstalls on close", async () => {
+    const stub = stubCli(`process.stdout.write(JSON.stringify({ event: "result", result: { status: "SUCCESS" } }));`);
+    const adapter = new AntigravityAdapter({ binary: stub.path });
+    const packDir = packWith("alpha");
+
+    await adapter.runPrompt({ prompt: "hi", packDir });
+    await adapter.runPrompt({ prompt: "again", packDir });
+
+    const during = JSON.parse(readFileSync(stub.logPath, "utf8")) as { installCount: number; uninstallCount?: number };
+    expect(during.installCount).toBe(1);
+    expect(during.uninstallCount ?? 0).toBe(0);
+
+    await adapter.close();
+
+    const after = JSON.parse(readFileSync(stub.logPath, "utf8")) as { uninstallCount: number; uninstallArgv: string[]; name: string };
+    expect(after.uninstallCount).toBe(1);
+    expect(after.uninstallArgv).toEqual(["plugin", "uninstall", after.name]);
+  });
+
   it("kills a hung CLI and reports the timeout", async () => {
     const stub = stubCli(`setTimeout(() => {}, 60000);`);
     const adapter = new AntigravityAdapter({ binary: stub.path });
 
-    const outcome = await adapter.runPrompt({ prompt: "hi", packDir: packWith("s"), timeoutMs: 300 });
+    try {
+      const outcome = await adapter.runPrompt({ prompt: "hi", packDir: packWith("s"), timeoutMs: 300 });
 
-    expect(outcome.usable).toBe(false);
-    expect(outcome.unusableReason).toMatch(/timed out/i);
+      expect(outcome.usable).toBe(false);
+      expect(outcome.unusableReason).toMatch(/timed out/i);
+    } finally {
+      await adapter.close();
+    }
   });
 });

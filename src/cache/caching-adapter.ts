@@ -38,6 +38,10 @@ export class CachingAdapter implements AgentAdapter {
     return outcome;
   }
 
+  async close(): Promise<void> {
+    await this.inner.close?.();
+  }
+
   private async store(file: string, key: string, outcome: RunOutcome): Promise<void> {
     const write = (this.writes.get(key) ?? Promise.resolve()).catch(() => undefined).then(() => {
       const outcomes = (readCache(file)?.outcomes ?? []).filter(isOutcome);

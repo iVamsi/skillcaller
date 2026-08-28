@@ -165,6 +165,15 @@ describe("skillcaller run", () => {
     }
   });
 
+  it("prints the planned agent-call count before running", async () => {
+    const { packDir, scriptFile } = pack({ "do alpha": [["alpha"]], "do nothing": [[]] });
+
+    await run(["run", packDir, "--agent", "fake", "--script", scriptFile, "--no-cache"]);
+
+    expect(stderr).toMatch(/2 agent calls across 1 skill/);
+    expect(stderr).toMatch(/concurrency 2/);
+  });
+
   it("passes custom --timeout through to the run", async () => {
     const { packDir, scriptFile } = pack({ "do alpha": [["alpha"]], "do nothing": [[]] });
 
@@ -191,7 +200,7 @@ describe("skillcaller run", () => {
 
     try {
       await run(["run", packDir, "--agent", "fake", "--script", scriptFile, "--no-cache"]);
-      expect(stderr).toContain("alpha: evaluated");
+      expect(stderr).toContain("alpha: 2/2 runs");
     } finally {
       Object.defineProperty(process.stderr, "isTTY", { value: originalIsTTY, configurable: true });
     }

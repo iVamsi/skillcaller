@@ -12,7 +12,7 @@ import { positiveInt, rate } from "./cli-options.js";
 import { buildCollisionMatrix, type CorpusOutcomes } from "./metrics/collisions.js";
 import { scoreSkill } from "./metrics/score.js";
 import type { SkillReport } from "./metrics/types.js";
-import { loadPack } from "./pack/load-pack.js";
+import { loadPack, type Pack } from "./pack/load-pack.js";
 import { renderJUnit, renderJson, renderMarkdown, renderTerminal, runPassed } from "./report/render.js";
 import { runCorpus } from "./runner/run-corpus.js";
 
@@ -67,6 +67,15 @@ const DEFAULT_MODEL = "claude-haiku-4-5-20251001";
 
 const FORMATS = ["terminal", "json", "markdown", "junit"] as const;
 
+function agentCallCount(pack: Pack): number {
+  let total = 0;
+  for (const entry of pack.entries) {
+    const prompts = entry.corpus.shouldTrigger.length + entry.corpus.shouldNotTrigger.length;
+    total += prompts * entry.corpus.runs;
+  }
+  return total;
+}
+
 async function runPack(packArg: string | undefined, flags: RunFlags): Promise<void> {
   if (!FORMATS.includes(flags.format as (typeof FORMATS)[number])) {
     process.stderr.write(`skillcaller: --format expects one of ${FORMATS.join(", ")}, got "${flags.format}"\n`);
@@ -84,8 +93,21 @@ async function runPack(packArg: string | undefined, flags: RunFlags): Promise<vo
   const pack = loadPack(packDir);
   const base = adapterFor(flags.agent, flags.script);
   const adapter = flags.cache ? new CachingAdapter(base, flags.cacheDir) : base;
+  try {
+    await measurePack(pack, adapter, flags);
+  } finally {
+    await adapter.close?.();
+  }
+}
+
+async function measurePack(pack: Pack, adapter: AgentAdapter, flags: RunFlags): Promise<void> {
   const model = flags.model ?? (flags.agent === "claude-code" ? DEFAULT_MODEL : undefined);
   const timeoutMs = flags.timeout === undefined ? undefined : positiveInt(flags.timeout, 180_000, "--timeout");
+  const concurrency = positiveInt(flags.concurrency, 2, "--concurrency");
+  const calls = agentCallCount(pack);
+  process.stderr.write(
+    `skillcaller: ${calls} agent call${calls === 1 ? "" : "s"} across ${pack.entries.length} skill${pack.entries.length === 1 ? "" : "s"} (concurrency ${concurrency})\n`,
+  );
 
   for (const skill of pack.skillsWithoutCorpus) {
     process.stderr.write(`warning: skill "${skill}" ships no evals/triggers.yaml and was not measured\n`);
@@ -99,20 +121,17 @@ async function runPack(packArg: string | undefined, flags: RunFlags): Promise<vo
       packDir: pack.root,
       ...(model === undefined ? {} : { model }),
       ...(timeoutMs === undefined ? {} : { timeoutMs }),
-      concurrency: positiveInt(flags.concurrency, 2, "--concurrency"),
+      concurrency,
       onProgress: (completed, total) => {
-        if (flags.format === "terminal" && process.stderr.isTTY === true) {
+        if (flags.format !== "terminal") return;
+        if (process.stderr.isTTY === true) {
           process.stderr.write(`\r${entry.corpus.skill}: ${completed}/${total} runs`);
+        } else {
+          process.stderr.write(`${entry.corpus.skill}: ${completed}/${total} runs\n`);
         }
       },
     });
-    if (flags.format === "terminal") {
-      if (process.stderr.isTTY === true) {
-        process.stderr.write("\n");
-      } else {
-        process.stderr.write(`${entry.corpus.skill}: evaluated\n`);
-      }
-    }
+    if (flags.format === "terminal" && process.stderr.isTTY === true) process.stderr.write("\n");
 
     reports.push(scoreSkill(entry.corpus, outcomes));
     corpora.push({ skill: entry.corpus.skill, outcomes });

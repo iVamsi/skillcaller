@@ -36,15 +36,20 @@ Write a haiku with 5-7-5 syllables. Output only the poem.
 
 describe.skipIf(!live || !agyInstalled())("AntigravityAdapter (live)", () => {
   it("detects a real skill invocation from the real agy CLI", async () => {
-    const outcome = await new AntigravityAdapter().runPrompt({
-      prompt: "write a haiku about gradle builds",
-      packDir: haikuPack(),
-      model: "gemini-3.5-flash-low",
-      timeoutMs: 170_000,
-    });
+    const adapter = new AntigravityAdapter();
+    try {
+      const outcome = await adapter.runPrompt({
+        prompt: "write a haiku about gradle builds",
+        packDir: haikuPack(),
+        model: "gemini-3.5-flash-low",
+        timeoutMs: 170_000,
+      });
 
-    expect(outcome.usable, outcome.unusableReason).toBe(true);
-    const seen = [...outcome.invokedSkills, ...(outcome.foreignSkills ?? [])];
-    expect(seen).toContain("haiku-writer");
+      expect(outcome.usable, outcome.unusableReason).toBe(true);
+      const seen = [...outcome.invokedSkills, ...(outcome.foreignSkills ?? [])];
+      expect(seen).toContain("haiku-writer");
+    } finally {
+      await adapter.close();
+    }
   });
 });

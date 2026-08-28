@@ -214,7 +214,7 @@ two-skill pack cost **$0.24** cold and **$0.00** warm, finishing in 3.8s instead
 The cache key covers the **whole pack**, not one skill, because skills compete for a prompt and a
 rival's new description can change this skill's result. Editing any description re-runs what it
 affects. Unusable runs are never cached, since an auth failure is not a verdict. Disable it with
-`--no-cache`.
+`--no-cache`. A run prints the planned agent-call count to stderr before the first spawn.
 
 ## Security
 
