@@ -200,10 +200,30 @@ describe("skillcaller run", () => {
 
     try {
       await run(["run", packDir, "--agent", "fake", "--script", scriptFile, "--no-cache"]);
-      expect(stderr).toContain("alpha: 2/2 runs");
+      expect(stderr).toContain("alpha: evaluated");
     } finally {
       Object.defineProperty(process.stderr, "isTTY", { value: originalIsTTY, configurable: true });
     }
   });
+
+  it("evaluates multiple skills across a pack with global concurrency", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "skillcaller-multi-"));
+    mkdirSync(join(dir, "alpha", "evals"), { recursive: true });
+    writeFileSync(join(dir, "alpha", "SKILL.md"), "---\nname: alpha\ndescription: alpha\n---\n");
+    writeFileSync(join(dir, "alpha", "evals", "triggers.yaml"), `skill: alpha\nruns: 1\nshould_trigger: ["do alpha"]\n`);
+
+    mkdirSync(join(dir, "beta", "evals"), { recursive: true });
+    writeFileSync(join(dir, "beta", "SKILL.md"), "---\nname: beta\ndescription: beta\n---\n");
+    writeFileSync(join(dir, "beta", "evals", "triggers.yaml"), `skill: beta\nruns: 1\nshould_trigger: ["do beta"]\n`);
+
+    const scriptFile = join(dir, "script.json");
+    writeFileSync(scriptFile, JSON.stringify({ "do alpha": [["alpha"]], "do beta": [["beta"]] }));
+
+    await run(["run", dir, "--agent", "fake", "--script", scriptFile, "--concurrency", "4", "--no-cache"]);
+
+    expect(stdout).toMatch(/All 2 skill\(s\) passed/);
+    expect(process.exitCode).toBe(0);
+  });
 });
+
 

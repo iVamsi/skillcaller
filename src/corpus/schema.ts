@@ -11,6 +11,7 @@ const rawCorpusSchema = z
   .object({
     skill: z.string().min(1),
     runs: z.number().int().positive().default(DEFAULT_RUNS),
+    timeout_ms: z.number().int().positive().optional(),
     gates: z
       .object({
         trigger: rate.default(DEFAULT_TRIGGER_GATE),
@@ -30,6 +31,7 @@ export interface Gates {
 export interface Corpus {
   readonly skill: string;
   readonly runs: number;
+  readonly timeoutMs?: number;
   readonly gates: Gates;
   readonly shouldTrigger: readonly string[];
   readonly shouldNotTrigger: readonly string[];
@@ -87,6 +89,7 @@ export function parseCorpus(text: string, source: string): Corpus {
   return {
     skill: raw.skill,
     runs: raw.runs,
+    ...(raw.timeout_ms === undefined ? {} : { timeoutMs: raw.timeout_ms }),
     gates: { trigger: raw.gates.trigger, noTrigger: raw.gates.no_trigger },
     shouldTrigger,
     shouldNotTrigger,

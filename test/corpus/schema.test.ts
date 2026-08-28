@@ -54,4 +54,9 @@ describe("parseCorpus", () => {
   it("reports malformed YAML with the file name", () => {
     expect(() => parseCorpus(`skill: [unclosed`, "broken.yaml")).toThrow(/broken\.yaml/);
   });
+
+  it("parses optional timeout_ms when provided", () => {
+    const corpus = parseCorpus(`skill: s\ntimeout_ms: 45000\nshould_trigger: ["a"]`, "triggers.yaml");
+    expect(corpus.timeoutMs).toBe(45000);
+  });
 });

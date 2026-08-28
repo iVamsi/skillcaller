@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { runCorpus } from "../../src/runner/run-corpus.js";
+import { runCorpus, runPackCorpora } from "../../src/runner/run-corpus.js";
 import type { AgentAdapter, RunRequest } from "../../src/adapters/types.js";
 import type { Corpus } from "../../src/corpus/schema.js";
 import type { RunOutcome } from "../../src/metrics/types.js";
@@ -114,4 +114,77 @@ describe("runCorpus", () => {
     expect(seen).toHaveLength(9);
     expect(seen.at(-1)).toBe(9);
   });
+
+  it("uses corpus.timeoutMs when options.timeoutMs is not provided", async () => {
+    const customCorpus: Corpus = { ...corpus, timeoutMs: 42000 };
+    const seen: RunRequest[] = [];
+    await runCorpus(customCorpus, adapterOf((request) => { seen.push(request); return hit; }), {
+      packDir: "/pack",
+    });
+
+    expect(seen[0]?.timeoutMs).toBe(42000);
+  });
+
+  it("options.timeoutMs overrides corpus.timeoutMs", async () => {
+    const customCorpus: Corpus = { ...corpus, timeoutMs: 42000 };
+    const seen: RunRequest[] = [];
+    await runCorpus(customCorpus, adapterOf((request) => { seen.push(request); return hit; }), {
+      packDir: "/pack",
+      timeoutMs: 15000,
+    });
+
+    expect(seen[0]?.timeoutMs).toBe(15000);
+  });
 });
+
+describe("runPackCorpora", () => {
+  it("runs prompts across multiple skills in a shared worker pool", async () => {
+    const skillA: Corpus = {
+      skill: "skill-a",
+      runs: 2,
+      gates: { trigger: 0.9, noTrigger: 0.05 },
+      shouldTrigger: ["a1"],
+      shouldNotTrigger: [],
+    };
+    const skillB: Corpus = {
+      skill: "skill-b",
+      runs: 2,
+      gates: { trigger: 0.9, noTrigger: 0.05 },
+      shouldTrigger: ["b1"],
+      shouldNotTrigger: [],
+    };
+
+    let inFlight = 0;
+    let peak = 0;
+    const completedSkills: string[] = [];
+
+    const outcomes = await runPackCorpora(
+      [
+        { directory: "/pack/skill-a", description: "a", corpus: skillA },
+        { directory: "/pack/skill-b", description: "b", corpus: skillB },
+      ],
+      adapterOf(async (request) => {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        inFlight -= 1;
+        return { invokedSkills: [request.prompt.startsWith("a") ? "skill-a" : "skill-b"], usable: true, costUsd: 0.01 };
+      }),
+      {
+        packDir: "/pack",
+        concurrency: 4,
+        onSkillComplete: (skill) => {
+          completedSkills.push(skill);
+        },
+      },
+    );
+
+    expect(peak).toBeGreaterThan(1);
+    expect(outcomes).toHaveLength(2);
+    expect(outcomes[0]?.[0]?.prompt).toBe("a1");
+    expect(outcomes[1]?.[0]?.prompt).toBe("b1");
+    expect(completedSkills).toContain("skill-a");
+    expect(completedSkills).toContain("skill-b");
+  });
+});
+

@@ -67,6 +67,7 @@ This creates `skills/my-skill/evals/triggers.yaml` next to your `SKILL.md`.
 # skills/my-skill/evals/triggers.yaml
 skill: my-skill
 runs: 5          # activation is a rate, so one run proves nothing
+# timeout_ms: 60000 # optional per-skill timeout in milliseconds
 gates:
   trigger: 0.9      # must trigger on >= 90% of expected queries
   no_trigger: 0.05  # must false-trigger on <= 5% of unrelated queries

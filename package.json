@@ -1,6 +1,6 @@
 {
   "name": "skillcaller",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Trigger-reliability eval harness for Agent Skills: proves your skills fire when they should and stay silent when they shouldn't.",
   "type": "module",
   "license": "Apache-2.0",

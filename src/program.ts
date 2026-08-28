@@ -14,7 +14,7 @@ import { scoreSkill } from "./metrics/score.js";
 import type { SkillReport } from "./metrics/types.js";
 import { loadPack, type Pack } from "./pack/load-pack.js";
 import { renderJUnit, renderJson, renderMarkdown, renderTerminal, runPassed } from "./report/render.js";
-import { runCorpus } from "./runner/run-corpus.js";
+import { runPackCorpora } from "./runner/run-corpus.js";
 
 export const STANDARD_SKILL_DIRS = [
   "skills",
@@ -116,23 +116,33 @@ async function measurePack(pack: Pack, adapter: AgentAdapter, flags: RunFlags): 
   const reports: SkillReport[] = [];
   const corpora: CorpusOutcomes[] = [];
 
-  for (const entry of pack.entries) {
-    const outcomes = await runCorpus(entry.corpus, adapter, {
-      packDir: pack.root,
-      ...(model === undefined ? {} : { model }),
-      ...(timeoutMs === undefined ? {} : { timeoutMs }),
-      concurrency,
-      onProgress: (completed, total) => {
-        if (flags.format !== "terminal") return;
+  let completedSkills = 0;
+  const allOutcomes = await runPackCorpora(pack.entries, adapter, {
+    packDir: pack.root,
+    ...(model === undefined ? {} : { model }),
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
+    concurrency,
+    onProgress: (completed, total) => {
+      if (flags.format === "terminal" && process.stderr.isTTY === true) {
+        process.stderr.write(`\rprogress: ${completed}/${total} runs`);
+      }
+    },
+    onSkillComplete: (skill) => {
+      completedSkills += 1;
+      if (flags.format === "terminal") {
         if (process.stderr.isTTY === true) {
-          process.stderr.write(`\r${entry.corpus.skill}: ${completed}/${total} runs`);
+          process.stderr.write(`\r${skill}: evaluated (${completedSkills}/${pack.entries.length} skills)\n`);
         } else {
-          process.stderr.write(`${entry.corpus.skill}: ${completed}/${total} runs\n`);
+          process.stderr.write(`${skill}: evaluated\n`);
         }
-      },
-    });
-    if (flags.format === "terminal" && process.stderr.isTTY === true) process.stderr.write("\n");
+      }
+    },
+  });
 
+  for (let i = 0; i < pack.entries.length; i++) {
+    const entry = pack.entries[i];
+    if (entry === undefined) continue;
+    const outcomes = allOutcomes[i] ?? [];
     reports.push(scoreSkill(entry.corpus, outcomes));
     corpora.push({ skill: entry.corpus.skill, outcomes });
   }
@@ -159,7 +169,7 @@ export function createProgram(): Command {
   program
     .name("skillcaller")
     .description("Trigger-reliability evals for Agent Skills")
-    .version("0.1.0");
+    .version("0.1.1");
 
   program
     .command("run")
