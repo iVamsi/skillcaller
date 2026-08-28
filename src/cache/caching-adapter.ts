@@ -71,7 +71,7 @@ export class CachingAdapter implements AgentAdapter {
     for (const name of readdirSync(packDir).sort()) {
       const skillFile = join(packDir, name, "SKILL.md");
       if (!existsSync(skillFile) || !statSync(join(packDir, name)).isDirectory()) continue;
-      hash.update(name).update(" ").update(readFileSync(skillFile, "utf8"));
+      hash.update(name).update(" ").update(readFileSync(skillFile, "utf8").replace(/\r\n/g, "\n"));
     }
     const fingerprint = hash.digest("hex");
     this.fingerprints.set(packDir, fingerprint);

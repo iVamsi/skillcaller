@@ -55,6 +55,7 @@ interface RunFlags {
   readonly agent: string;
   readonly model?: string;
   readonly concurrency: string;
+  readonly timeout?: string;
   readonly format: string;
   readonly script?: string;
   readonly collisionThreshold: string;
@@ -84,6 +85,7 @@ async function runPack(packArg: string | undefined, flags: RunFlags): Promise<vo
   const base = adapterFor(flags.agent, flags.script);
   const adapter = flags.cache ? new CachingAdapter(base, flags.cacheDir) : base;
   const model = flags.model ?? (flags.agent === "claude-code" ? DEFAULT_MODEL : undefined);
+  const timeoutMs = flags.timeout === undefined ? undefined : positiveInt(flags.timeout, 180_000, "--timeout");
 
   for (const skill of pack.skillsWithoutCorpus) {
     process.stderr.write(`warning: skill "${skill}" ships no evals/triggers.yaml and was not measured\n`);
@@ -96,6 +98,7 @@ async function runPack(packArg: string | undefined, flags: RunFlags): Promise<vo
     const outcomes = await runCorpus(entry.corpus, adapter, {
       packDir: pack.root,
       ...(model === undefined ? {} : { model }),
+      ...(timeoutMs === undefined ? {} : { timeoutMs }),
       concurrency: positiveInt(flags.concurrency, 2, "--concurrency"),
       onProgress: (completed, total) => {
         if (flags.format === "terminal" && process.stderr.isTTY === true) {
@@ -103,7 +106,13 @@ async function runPack(packArg: string | undefined, flags: RunFlags): Promise<vo
         }
       },
     });
-    if (flags.format === "terminal" && process.stderr.isTTY === true) process.stderr.write("\n");
+    if (flags.format === "terminal") {
+      if (process.stderr.isTTY === true) {
+        process.stderr.write("\n");
+      } else {
+        process.stderr.write(`${entry.corpus.skill}: evaluated\n`);
+      }
+    }
 
     reports.push(scoreSkill(entry.corpus, outcomes));
     corpora.push({ skill: entry.corpus.skill, outcomes });
@@ -139,6 +148,7 @@ export function createProgram(): Command {
     .option("-a, --agent <agent>", "claude-code, codex, cursor, antigravity or fake", "claude-code")
     .option("-m, --model <model>", "model to evaluate against")
     .option("-c, --concurrency <n>", "parallel agent runs", "2")
+    .option("-t, --timeout <ms>", "per-prompt agent timeout in milliseconds")
     .option("-f, --format <format>", "terminal, json, markdown or junit", "terminal")
     .option("--script <file>", "scripted outcomes for the fake agent")
     .option("--collision-threshold <rate>", "report a collision at or above this rate", "0.2")
@@ -155,9 +165,10 @@ export function createProgram(): Command {
       const name = skillDir.replace(/\/+$/, "").split("/").pop() ?? "my-skill";
       mkdirSync(join(skillDir, "evals"), { recursive: true });
       const file = join(skillDir, "evals", "triggers.yaml");
-      writeFileSync(
-        file,
-        `skill: ${name}
+      try {
+        writeFileSync(
+          file,
+          `skill: ${name}
 # Repeats per prompt. Activation is a rate, so one run proves nothing.
 runs: 5
 gates:
@@ -172,9 +183,17 @@ should_trigger:
 should_not_trigger:
   - "rename this variable"
 `,
-        { flag: "wx" },
-      );
-      process.stdout.write(`created ${file}\n`);
+          { flag: "wx" },
+        );
+        process.stdout.write(`created ${file}\n`);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+          process.stderr.write(`skillcaller: "${file}" already exists\n`);
+          process.exitCode = 1;
+          return;
+        }
+        throw error;
+      }
     });
 
   return program;

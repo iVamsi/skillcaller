@@ -61,6 +61,16 @@ describe("skillcaller init", () => {
 
     expect(stderr).not.toMatch(/Too small|expected string/);
   });
+
+  it("fails gracefully with a clean message when evals/triggers.yaml already exists", async () => {
+    const dir = skillDir("my-skill");
+    await run(["init", join(dir, "my-skill")]);
+    expect(process.exitCode).toBe(0);
+
+    await run(["init", join(dir, "my-skill")]);
+    expect(stderr).toMatch(/already exists/);
+    expect(process.exitCode).toBe(1);
+  });
 });
 
 describe("skillcaller run", () => {
@@ -154,4 +164,37 @@ describe("skillcaller run", () => {
       process.chdir(origCwd);
     }
   });
+
+  it("passes custom --timeout through to the run", async () => {
+    const { packDir, scriptFile } = pack({ "do alpha": [["alpha"]], "do nothing": [[]] });
+
+    await run(["run", packDir, "--agent", "fake", "--script", scriptFile, "--timeout", "5000", "--no-cache"]);
+
+    expect(stdout).toMatch(/passed/i);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it("warns on invalid --timeout and falls back", async () => {
+    const { packDir, scriptFile } = pack({ "do alpha": [["alpha"]], "do nothing": [[]] });
+
+    await run(["run", packDir, "--agent", "fake", "--script", scriptFile, "--timeout", "invalid", "--no-cache"]);
+
+    expect(stderr).toMatch(/--timeout/);
+    expect(stdout).toMatch(/passed/i);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it("logs non-TTY progress when running in terminal mode", async () => {
+    const { packDir, scriptFile } = pack({ "do alpha": [["alpha"]], "do nothing": [[]] });
+    const originalIsTTY = process.stderr.isTTY;
+    Object.defineProperty(process.stderr, "isTTY", { value: false, configurable: true });
+
+    try {
+      await run(["run", packDir, "--agent", "fake", "--script", scriptFile, "--no-cache"]);
+      expect(stderr).toContain("alpha: evaluated");
+    } finally {
+      Object.defineProperty(process.stderr, "isTTY", { value: originalIsTTY, configurable: true });
+    }
+  });
 });
+

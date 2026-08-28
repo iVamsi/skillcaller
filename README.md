@@ -153,6 +153,7 @@ the matrix is built from runs already made.
 | `-a, --agent <agent>` | Agent engine: `claude-code`, `codex`, `cursor`, `antigravity`, `fake` | `claude-code` |
 | `-m, --model <model>` | Model to evaluate against | `claude-haiku-4-5-20251001` (for claude-code) |
 | `-c, --concurrency <n>` | Parallel agent runs | `2` |
+| `-t, --timeout <ms>` | Per-prompt timeout in milliseconds | agent default (120000-180000ms) |
 | `-f, --format <format>` | Output format: `terminal`, `markdown`, `json`, `junit` | `terminal` |
 | `--collision-threshold <rate>` | Report a collision at or above this invocation rate | `0.2` |
 | `--no-cache` | Re-run every prompt instead of reusing cached answers | `false` |

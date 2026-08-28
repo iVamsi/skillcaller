@@ -179,4 +179,24 @@ describe("CachingAdapter", () => {
     expect(first.invokedSkills).toEqual(["alpha"]);
     expect(second.invokedSkills).toEqual([]);
   });
+
+  it("produces identical cache key for CRLF and LF line endings in SKILL.md", async () => {
+    const { adapter, calls } = countingAdapter();
+    const dir = cacheDir();
+
+    const lfDir = mkdtempSync(join(tmpdir(), "skillcaller-lf-"));
+    mkdirSync(join(lfDir, "alpha"), { recursive: true });
+    writeFileSync(join(lfDir, "alpha", "SKILL.md"), "---\nname: alpha\ndescription: test\n---\nbody\n");
+
+    const crlfDir = mkdtempSync(join(tmpdir(), "skillcaller-crlf-"));
+    mkdirSync(join(crlfDir, "alpha"), { recursive: true });
+    writeFileSync(join(crlfDir, "alpha", "SKILL.md"), "---\r\nname: alpha\r\ndescription: test\r\n---\r\nbody\r\n");
+
+    const first = await new CachingAdapter(adapter, dir).runPrompt({ prompt: "p", packDir: lfDir });
+    const second = await new CachingAdapter(adapter, dir).runPrompt({ prompt: "p", packDir: crlfDir });
+
+    expect(calls()).toBe(1);
+    expect(second.invokedSkills).toEqual(first.invokedSkills);
+  });
 });
+
