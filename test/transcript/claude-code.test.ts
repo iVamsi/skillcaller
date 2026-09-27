@@ -1,5 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import type { Corpus } from "../../src/corpus/schema.js";
+import { scoreSkill } from "../../src/metrics/score.js";
 import { parseClaudeCodeTranscript } from "../../src/transcript/claude-code.js";
 
 const fixture = (name: string) =>
@@ -74,5 +76,47 @@ describe("parseClaudeCodeTranscript", () => {
     const result = parseClaudeCodeTranscript(fixture("not-logged-in.ndjson"));
 
     expect(result.visibleSkills).toContain("haiku-writer");
+  });
+
+  it("treats a provider execution error as unusable", () => {
+    const result = parseClaudeCodeTranscript(
+      JSON.stringify({ type: "result", subtype: "error_during_execution", is_error: true }),
+    );
+
+    expect(result.usable).toBe(false);
+    expect(result.unusableReason).toMatch(/error_during_execution/);
+  });
+
+  it("does not let an execution error pass a negative-only corpus", () => {
+    const parsed = parseClaudeCodeTranscript(
+      JSON.stringify({ type: "result", subtype: "error_during_execution", is_error: true }),
+    );
+    const corpus: Corpus = {
+      skill: "alpha",
+      runs: 1,
+      gates: { trigger: 0.9, noTrigger: 0.05 },
+      shouldTrigger: [],
+      shouldNotTrigger: ["stay quiet"],
+    };
+    const report = scoreSkill(corpus, [
+      {
+        prompt: "stay quiet",
+        expectation: "no-trigger",
+        runs: [
+          {
+            invokedSkills: parsed.invokedSkills,
+            usable: parsed.usable,
+            costUsd: parsed.costUsd,
+            ...(parsed.unusableReason === undefined ? {} : { unusableReason: parsed.unusableReason }),
+          },
+        ],
+      },
+    ]);
+
+    expect(report.passed).toBe(false);
+  });
+
+  it("keeps the recorded max-turns stop measurable", () => {
+    expect(parseClaudeCodeTranscript(fixture("invoked.ndjson")).usable).toBe(true);
   });
 });

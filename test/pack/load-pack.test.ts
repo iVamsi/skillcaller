@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -71,5 +71,20 @@ describe("loadPack", () => {
 
   it("fails clearly when the directory holds no skills at all", () => {
     expect(() => loadPack(mkdtempSync(join(tmpdir(), "empty-")))).toThrow(/no skills/i);
+  });
+
+  it("keeps the cause when a corpus cannot be read", () => {
+    const dir = pack({ alpha: { corpus: corpusFor("alpha") } });
+    const corpusFile = join(dir, "alpha", "evals", "triggers.yaml");
+    chmodSync(corpusFile, 0);
+    try {
+      loadPack(dir);
+      expect.fail("loadPack should reject an unreadable corpus");
+    } catch (error) {
+      expect((error as Error).message).toMatch(/cannot read corpus for "alpha"/);
+      expect((error as { cause?: unknown }).cause).toBeInstanceOf(Error);
+    } finally {
+      chmodSync(corpusFile, 0o644);
+    }
   });
 });

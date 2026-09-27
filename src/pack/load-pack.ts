@@ -46,9 +46,13 @@ export function loadPack(root: string): Pack {
     let corpusText: string;
     try {
       corpusText = readFileSync(corpusFile, "utf8");
-    } catch {
-      withoutCorpus.push(name);
-      continue;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        withoutCorpus.push(name);
+        continue;
+      }
+      const cause = error instanceof Error ? error : new Error(String(error));
+      throw new Error(`cannot read corpus for "${name}": ${cause.message}`, { cause });
     }
 
     const corpus = parseCorpus(corpusText, join(name, "evals", "triggers.yaml"));

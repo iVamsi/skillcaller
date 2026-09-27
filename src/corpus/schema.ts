@@ -37,13 +37,6 @@ export interface Corpus {
   readonly shouldNotTrigger: readonly string[];
 }
 
-export class CorpusError extends Error {
-  constructor(source: string, detail: string) {
-    super(`${source}: ${detail}`);
-    this.name = "CorpusError";
-  }
-}
-
 function findDuplicate(prompts: readonly string[]): string | undefined {
   const seen = new Set<string>();
   for (const prompt of prompts) {
@@ -58,14 +51,14 @@ export function parseCorpus(text: string, source: string): Corpus {
   try {
     document = parseYaml(text);
   } catch (error) {
-    throw new CorpusError(source, `invalid YAML (${(error as Error).message})`);
+    throw new Error(`${source}: invalid YAML (${(error as Error).message})`);
   }
 
   const parsed = rawCorpusSchema.safeParse(document);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
     const path = issue?.path.join(".");
-    throw new CorpusError(source, `${path ? `${path}: ` : ""}${issue?.message ?? "invalid corpus"}`);
+    throw new Error(`${source}: ${path ? `${path}: ` : ""}${issue?.message ?? "invalid corpus"}`);
   }
 
   const raw = parsed.data;
@@ -73,17 +66,17 @@ export function parseCorpus(text: string, source: string): Corpus {
   const shouldNotTrigger = raw.should_not_trigger;
 
   if (shouldTrigger.length === 0 && shouldNotTrigger.length === 0) {
-    throw new CorpusError(source, "corpus has no prompts; add should_trigger and/or should_not_trigger");
+    throw new Error(`${source}: corpus has no prompts; add should_trigger and/or should_not_trigger`);
   }
 
   const duplicate = findDuplicate([...shouldTrigger]) ?? findDuplicate([...shouldNotTrigger]);
   if (duplicate !== undefined) {
-    throw new CorpusError(source, `duplicate prompt "${duplicate}" would double-weight that case`);
+    throw new Error(`${source}: duplicate prompt "${duplicate}" would double-weight that case`);
   }
 
   const overlap = shouldTrigger.find((prompt) => shouldNotTrigger.includes(prompt));
   if (overlap !== undefined) {
-    throw new CorpusError(source, `prompt "${overlap}" appears in both should_trigger and should_not_trigger`);
+    throw new Error(`${source}: prompt "${overlap}" appears in both should_trigger and should_not_trigger`);
   }
 
   return {

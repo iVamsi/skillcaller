@@ -140,6 +140,11 @@ invocations. skillcaller cross-tabulates every skill's prompts against every ski
 them, so an ambiguous description is named rather than guessed at. It costs no extra agent calls:
 the matrix is built from runs already made.
 
+A collision is reported when that other skill's share of usable trigger runs is at least
+`--collision-threshold` (default `0.2`). A threshold of `0` reports every positive rate and does
+not invent a collision for a pair that never fired. A threshold of `1` reports only a skill that
+answered every usable trigger run.
+
 ## Commands
 
 | Command | What it does |
@@ -156,7 +161,7 @@ the matrix is built from runs already made.
 | `-c, --concurrency <n>` | Parallel agent runs | `2` |
 | `-t, --timeout <ms>` | Per-prompt timeout in milliseconds | agent default (120000-180000ms) |
 | `-f, --format <format>` | Output format: `terminal`, `markdown`, `json`, `junit` | `terminal` |
-| `--collision-threshold <rate>` | Report a collision at or above this invocation rate | `0.2` |
+| `--collision-threshold <rate>` | Report a collision at or above this invocation rate. `0` reports any positive rate. `1` reports only a skill that answered every usable trigger run. | `0.2` |
 | `--no-cache` | Re-run every prompt instead of reusing cached answers | `false` |
 | `--cache-dir <dir>` | Directory where cached answers live | `.skillcaller-cache` |
 | `--script <file>` | Path to scripted responses for the `fake` agent | (none) |

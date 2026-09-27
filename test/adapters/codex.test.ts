@@ -44,7 +44,7 @@ describe("CodexAdapter", () => {
     const stub = stubCli(`
 const skillFile = join(workspace, ".codex", "skills", "haiku-writer", "SKILL.md");
 process.stdout.write([
-  JSON.stringify({ type: "item.completed", item: { type: "command_execution", command: "sed -n '1,10p' '" + skillFile + "'" } }),
+  JSON.stringify({ type: "item.completed", item: { type: "command_execution", command: "sed -n '1,10p' '" + skillFile + "'", exit_code: 0, status: "completed" } }),
   JSON.stringify({ type: "turn.completed" }),
 ].join("\\n"));
 `);
@@ -77,7 +77,7 @@ process.stdout.write([
     const stub = stubCli(`
 const skillFile = join(workspace, ".codex", "skills", "alpha", "SKILL.md");
 process.stdout.write([
-  JSON.stringify({ type: "item.completed", item: { type: "command_execution", command: "sed -n '1,5p' '" + require("node:fs").realpathSync(workspace) + "/.codex/skills/alpha/SKILL.md'" } }),
+  JSON.stringify({ type: "item.completed", item: { type: "command_execution", command: "sed -n '1,5p' '" + require("node:fs").realpathSync(workspace) + "/.codex/skills/alpha/SKILL.md'", exit_code: 0, status: "completed" } }),
   JSON.stringify({ type: "turn.completed" }),
 ].join("\\n"));
 `);
