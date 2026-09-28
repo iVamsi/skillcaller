@@ -4,6 +4,7 @@ import type { SkillReport } from "../metrics/types.js";
 
 export interface RenderOptions {
   readonly color?: boolean;
+  readonly skippedSkills?: readonly string[];
 }
 
 const percent = (rate: number | undefined): string =>
@@ -51,11 +52,18 @@ export function renderTerminal(
     }
   }
 
+  const skipped = options.skippedSkills ?? [];
+  if (skipped.length > 0) {
+    lines.push(dim(`Not measured (no corpus): ${skipped.join(", ")}`));
+  }
+
   const totalCost = reports.reduce((sum, report) => sum + report.totalCostUsd, 0);
   const failed = reports.filter((report) => !report.passed).length;
   const collisions = matrix?.collisions.length ?? 0;
   lines.push("");
-  if (failed === 0 && collisions === 0) {
+  if (reports.length === 0) {
+    lines.push(red("No skills were measured."));
+  } else if (failed === 0 && collisions === 0) {
     lines.push(green(`All ${reports.length} skill(s) passed.`) + dim(`  cost ${money(totalCost)}`));
   } else {
     const parts = [
@@ -68,16 +76,21 @@ export function renderTerminal(
   return lines.join("\n");
 }
 
-/** True when every skill passed and there are no collisions. */
+/** True when every measured skill passed and there are no collisions. An empty run is not a pass. */
 export function runPassed(reports: readonly SkillReport[], matrix?: CollisionMatrix): boolean {
-  return reports.every((report) => report.passed) && (matrix?.collisions.length ?? 0) === 0;
+  return reports.length > 0 && reports.every((report) => report.passed) && (matrix?.collisions.length ?? 0) === 0;
 }
 
-export function renderJson(reports: readonly SkillReport[], matrix?: CollisionMatrix): string {
+export function renderJson(
+  reports: readonly SkillReport[],
+  matrix?: CollisionMatrix,
+  skippedSkills: readonly string[] = [],
+): string {
   return JSON.stringify(
     {
       passed: runPassed(reports, matrix),
       skills: reports,
+      skippedSkills,
       collisions: matrix?.collisions ?? [],
       totalCostUsd: reports.reduce((sum, report) => sum + report.totalCostUsd, 0),
     },
@@ -86,13 +99,21 @@ export function renderJson(reports: readonly SkillReport[], matrix?: CollisionMa
   );
 }
 
-export function renderMarkdown(reports: readonly SkillReport[], matrix?: CollisionMatrix): string {
+export function renderMarkdown(
+  reports: readonly SkillReport[],
+  matrix?: CollisionMatrix,
+  skippedSkills: readonly string[] = [],
+): string {
   const lines: string[] = [
     "## skillcaller",
     "",
     "| Skill | Triggers | False triggers | Result |",
     "| --- | --- | --- | --- |",
   ];
+
+  if (reports.length === 0) {
+    lines.push("", "No skills were measured.");
+  }
 
   for (const report of reports) {
     lines.push(
@@ -116,6 +137,11 @@ export function renderMarkdown(reports: readonly SkillReport[], matrix?: Collisi
     }
   }
 
+  if (skippedSkills.length > 0) {
+    lines.push("", "### Not measured", "");
+    for (const skill of skippedSkills) lines.push(`- **${skill}**: missing corpus`);
+  }
+
   if (matrix !== undefined && matrix.collisions.length > 0) {
     lines.push("", "### Collisions", "");
     for (const collision of matrix.collisions) {
@@ -129,9 +155,30 @@ export function renderMarkdown(reports: readonly SkillReport[], matrix?: Collisi
 }
 
 /** JUnit XML, so CI systems show each skill as a test case. */
-export function renderJUnit(reports: readonly SkillReport[], matrix?: CollisionMatrix): string {
+export function renderJUnit(
+  reports: readonly SkillReport[],
+  matrix?: CollisionMatrix,
+  skippedSkills: readonly string[] = [],
+): string {
   const escape = (value: string): string =>
     value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+  if (reports.length === 0) {
+    const message =
+      skippedSkills.length === 0
+        ? "no skills were measured"
+        : `no skills were measured; missing corpus: ${skippedSkills.join(", ")}`;
+    return (
+      `<?xml version="1.0" encoding="UTF-8"?>\n` +
+      `<testsuites>\n` +
+      `  <testsuite name="skillcaller" tests="1" failures="1">\n` +
+      `    <testcase classname="skillcaller" name="measured skills">\n` +
+      `      <failure message="${escape(message)}" />\n` +
+      `    </testcase>\n` +
+      `  </testsuite>\n` +
+      `</testsuites>\n`
+    );
+  }
 
   const collisions = matrix?.collisions ?? [];
   const failures = reports.filter((report) => !report.passed).length + (collisions.length > 0 ? 1 : 0);

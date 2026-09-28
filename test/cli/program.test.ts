@@ -224,6 +224,48 @@ describe("skillcaller run", () => {
     expect(stdout).toMatch(/All 2 skill\(s\) passed/);
     expect(process.exitCode).toBe(0);
   });
+
+  it("fails every report format when no skill has a corpus", async () => {
+    const dir = skillDir("alpha");
+
+    for (const format of ["terminal", "json", "markdown", "junit"]) {
+      stdout = "";
+      stderr = "";
+      process.exitCode = 0;
+      await run(["run", dir, "--agent", "fake", "--format", format, "--no-cache"]);
+
+      expect(process.exitCode, format).toBe(1);
+      if (format === "json") {
+        const report = JSON.parse(stdout) as { passed: boolean; skills: unknown[]; skippedSkills: string[] };
+        expect(report.passed).toBe(false);
+        expect(report.skills).toEqual([]);
+        expect(report.skippedSkills).toEqual(["alpha"]);
+      } else {
+        expect(stdout).toMatch(/no skills were measured/i);
+      }
+    }
+  });
+
+  it("names skills that were skipped because they have no corpus", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "skillcaller-partial-"));
+    mkdirSync(join(dir, "alpha", "evals"), { recursive: true });
+    writeFileSync(join(dir, "alpha", "SKILL.md"), "---\nname: alpha\ndescription: alpha\n---\n");
+    writeFileSync(
+      join(dir, "alpha", "evals", "triggers.yaml"),
+      `skill: alpha\nruns: 1\nshould_trigger: ["do alpha"]\nshould_not_trigger: ["do nothing"]\n`,
+    );
+    mkdirSync(join(dir, "beta"));
+    writeFileSync(join(dir, "beta", "SKILL.md"), "---\nname: beta\ndescription: beta\n---\n");
+    const scriptFile = join(dir, "script.json");
+    writeFileSync(scriptFile, JSON.stringify({ "do alpha": [["alpha"]], "do nothing": [[]] }));
+
+    await run(["run", dir, "--agent", "fake", "--script", scriptFile, "--format", "json", "--no-cache"]);
+
+    const report = JSON.parse(stdout) as { passed: boolean; skippedSkills: string[] };
+    expect(report.skippedSkills).toEqual(["beta"]);
+    expect(report.passed).toBe(true);
+    expect(stderr).toMatch(/beta/);
+  });
 });
 
 

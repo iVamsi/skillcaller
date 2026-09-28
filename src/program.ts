@@ -9,7 +9,7 @@ import { FakeAdapter } from "./adapters/fake.js";
 import type { AgentAdapter } from "./adapters/types.js";
 import { CachingAdapter } from "./cache/caching-adapter.js";
 import { positiveInt, rate } from "./cli-options.js";
-import { buildCollisionMatrix, type CorpusOutcomes } from "./metrics/collisions.js";
+import { buildCollisionMatrix, type CollisionMatrix, type CorpusOutcomes } from "./metrics/collisions.js";
 import { scoreSkill } from "./metrics/score.js";
 import type { SkillReport } from "./metrics/types.js";
 import { loadPack, type Pack } from "./pack/load-pack.js";
@@ -113,6 +113,12 @@ async function measurePack(pack: Pack, adapter: AgentAdapter, flags: RunFlags): 
     process.stderr.write(`warning: skill "${skill}" ships no evals/triggers.yaml and was not measured\n`);
   }
 
+  if (pack.entries.length === 0) {
+    writeReport(flags.format, [], buildCollisionMatrix([]), pack.skillsWithoutCorpus);
+    process.exitCode = 1;
+    return;
+  }
+
   const reports: SkillReport[] = [];
   const corpora: CorpusOutcomes[] = [];
 
@@ -151,17 +157,25 @@ async function measurePack(pack: Pack, adapter: AgentAdapter, flags: RunFlags): 
     threshold: rate(flags.collisionThreshold, 0.2, "--collision-threshold"),
   });
 
-  const output =
-    flags.format === "json"
-      ? renderJson(reports, matrix)
-      : flags.format === "markdown"
-        ? renderMarkdown(reports, matrix)
-        : flags.format === "junit"
-          ? renderJUnit(reports, matrix)
-          : renderTerminal(reports, matrix);
-  process.stdout.write(`${output}\n`);
-
+  writeReport(flags.format, reports, matrix, pack.skillsWithoutCorpus);
   process.exitCode = runPassed(reports, matrix) ? 0 : 1;
+}
+
+function writeReport(
+  format: string,
+  reports: readonly SkillReport[],
+  matrix: CollisionMatrix,
+  skippedSkills: readonly string[],
+): void {
+  const output =
+    format === "json"
+      ? renderJson(reports, matrix, skippedSkills)
+      : format === "markdown"
+        ? renderMarkdown(reports, matrix, skippedSkills)
+        : format === "junit"
+          ? renderJUnit(reports, matrix, skippedSkills)
+          : renderTerminal(reports, matrix, { skippedSkills });
+  process.stdout.write(`${output}\n`);
 }
 
 export function createProgram(): Command {
@@ -180,7 +194,11 @@ export function createProgram(): Command {
     .option("-t, --timeout <ms>", "per-prompt agent timeout in milliseconds")
     .option("-f, --format <format>", "terminal, json, markdown or junit", "terminal")
     .option("--script <file>", "scripted outcomes for the fake agent")
-    .option("--collision-threshold <rate>", "report a collision at or above this rate", "0.2")
+    .option(
+      "--collision-threshold <rate>",
+      "report a collision at or above this rate (0 = any positive rate, 1 = every run)",
+      "0.2",
+    )
     .option("--no-cache", "re-run every prompt instead of reusing cached answers")
     .option("--cache-dir <dir>", "where cached answers live", ".skillcaller-cache")
     .description("Measure how reliably each skill triggers")

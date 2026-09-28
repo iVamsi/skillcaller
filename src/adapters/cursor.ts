@@ -1,10 +1,10 @@
-import { spawn } from "node:child_process";
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RunOutcome } from "../metrics/types.js";
 import { parseCursorTranscript } from "../transcript/cursor.js";
 import { installPack } from "./install-pack.js";
+import { spawnCli, unusable } from "./spawn-cli.js";
 import type { AgentAdapter, RunRequest } from "./types.js";
 
 const DEFAULT_TIMEOUT_MS = 180_000;
@@ -41,7 +41,12 @@ export class CursorAdapter implements AgentAdapter {
       if (request.model !== undefined) args.push("--model", request.model);
       args.push(request.prompt);
 
-      const result = await this.spawnCli(args, workspace, request.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+      const result = await spawnCli(
+        this.options.binary ?? "cursor-agent",
+        args,
+        workspace,
+        request.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      );
       if (result.timedOut) {
         return unusable(`cursor timed out after ${request.timeoutMs ?? DEFAULT_TIMEOUT_MS}ms`);
       }
@@ -63,46 +68,4 @@ export class CursorAdapter implements AgentAdapter {
       rmSync(workspace, { recursive: true, force: true });
     }
   }
-
-  private spawnCli(
-    args: readonly string[],
-    cwd: string,
-    timeoutMs: number,
-  ): Promise<{ stdout: string; stderr: string; code: number | null; timedOut: boolean }> {
-    return new Promise((resolve) => {
-      const child = spawn(this.options.binary ?? "cursor-agent", [...args], {
-        cwd,
-        env: { ...process.env },
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-
-      const MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
-      let stdout = "";
-      let stderr = "";
-      let timedOut = false;
-      const timer = setTimeout(() => {
-        timedOut = true;
-        child.kill("SIGKILL");
-      }, timeoutMs);
-
-      child.stdout.on("data", (chunk: Buffer) => {
-        if (stdout.length < MAX_OUTPUT_BYTES) stdout += chunk.toString();
-      });
-      child.stderr.on("data", (chunk: Buffer) => {
-        if (stderr.length < MAX_OUTPUT_BYTES) stderr += chunk.toString();
-      });
-      child.on("error", (error) => {
-        clearTimeout(timer);
-        resolve({ stdout, stderr: `${stderr}${error.message}`, code: null, timedOut });
-      });
-      child.on("close", (code) => {
-        clearTimeout(timer);
-        resolve({ stdout, stderr, code, timedOut });
-      });
-    });
-  }
-}
-
-function unusable(reason: string): RunOutcome {
-  return { invokedSkills: [], usable: false, unusableReason: reason, costUsd: 0 };
 }

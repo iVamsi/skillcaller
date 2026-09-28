@@ -1,15 +1,6 @@
 import type { AgentAdapter } from "../adapters/types.js";
-import type { Corpus } from "../corpus/schema.js";
 import type { PromptOutcome, RunOutcome } from "../metrics/types.js";
 import type { PackEntry } from "../pack/load-pack.js";
-
-export interface RunOptions {
-  readonly packDir: string;
-  readonly model?: string;
-  readonly concurrency?: number;
-  readonly timeoutMs?: number;
-  readonly onProgress?: (completed: number, total: number) => void;
-}
 
 export interface RunPackOptions {
   readonly packDir: string;
@@ -29,27 +20,6 @@ interface PackJob {
 }
 
 const DEFAULT_CONCURRENCY = 2;
-
-export async function runCorpus(
-  corpus: Corpus,
-  adapter: AgentAdapter,
-  options: RunOptions,
-): Promise<readonly PromptOutcome[]> {
-  const [outcomes] = await runPackCorpora(
-    [{ directory: options.packDir, description: "", corpus }],
-    adapter,
-    {
-      packDir: options.packDir,
-      ...(options.model === undefined ? {} : { model: options.model }),
-      ...(options.concurrency === undefined ? {} : { concurrency: options.concurrency }),
-      ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
-      ...(options.onProgress === undefined
-        ? {}
-        : { onProgress: (c: number, t: number) => { options.onProgress?.(c, t); } }),
-    },
-  );
-  return outcomes ?? [];
-}
 
 export async function runPackCorpora(
   entries: readonly PackEntry[],

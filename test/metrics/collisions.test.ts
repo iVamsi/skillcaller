@@ -88,6 +88,53 @@ describe("buildCollisionMatrix", () => {
     expect(matrix.rateFor("alpha", "alpha")).toBe(1);
   });
 
+  it("does not invent a collision at threshold 0 when skills only invoked themselves", () => {
+    const matrix = buildCollisionMatrix(
+      [
+        { skill: "alpha", outcomes: outcomes([["alpha"]]) },
+        { skill: "beta", outcomes: outcomes([["beta"]]) },
+      ],
+      { threshold: 0 },
+    );
+
+    expect(matrix.collisions).toEqual([]);
+  });
+
+  it("reports any positive cross-invocation when the threshold is 0", () => {
+    const matrix = buildCollisionMatrix(
+      [{ skill: "alpha", outcomes: outcomes([["beta"], ["alpha"], ["alpha"], ["alpha"]]) }],
+      { threshold: 0 },
+    );
+
+    expect(matrix.collisions).toEqual([{ promptsFor: "alpha", answeredBy: "beta", rate: 0.25 }]);
+  });
+
+  it("reports only a certain collision when the threshold is 1", () => {
+    const partial = buildCollisionMatrix(
+      [{ skill: "alpha", outcomes: outcomes([["beta"], ["alpha"]]) }],
+      { threshold: 1 },
+    );
+    const certain = buildCollisionMatrix(
+      [{ skill: "alpha", outcomes: outcomes([["beta"], ["beta"]]) }],
+      { threshold: 1 },
+    );
+
+    expect(partial.collisions).toEqual([]);
+    expect(certain.collisions).toEqual([{ promptsFor: "alpha", answeredBy: "beta", rate: 1 }]);
+  });
+
+  it("uses the default threshold of 0.2", () => {
+    const below = buildCollisionMatrix([
+      { skill: "alpha", outcomes: outcomes([["beta"], ["alpha"], ["alpha"], ["alpha"], ["alpha"], ["alpha"]]) },
+    ]);
+    const above = buildCollisionMatrix([
+      { skill: "alpha", outcomes: outcomes([["beta"], ["alpha"]]) },
+    ]);
+
+    expect(below.collisions).toEqual([]);
+    expect(above.collisions).toEqual([{ promptsFor: "alpha", answeredBy: "beta", rate: 0.5 }]);
+  });
+
   it("lists every skill seen, including ones that only appear as intruders", () => {
     const matrix = buildCollisionMatrix([
       { skill: "alpha", outcomes: outcomes([["gamma"]]) },

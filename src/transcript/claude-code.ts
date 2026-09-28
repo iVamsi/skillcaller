@@ -39,6 +39,7 @@ export function parseClaudeCodeTranscript(ndjson: string): TranscriptResult {
   let sawResult = false;
   let costUsd = 0;
   let authFailure = false;
+  let providerError: string | undefined;
 
   for (const line of ndjson.split("\n")) {
     const trimmed = line.trim();
@@ -73,14 +74,20 @@ export function parseClaudeCodeTranscript(ndjson: string): TranscriptResult {
     if (event.type === "result") {
       sawResult = true;
       if (typeof event.total_cost_usd === "number") costUsd = event.total_cost_usd;
+      // Recorded max-turns stop (fixtures/claude-code/invoked.ndjson) still observed the Skill call.
+      if (event.is_error === true && event.subtype !== "error_max_turns") {
+        providerError = event.subtype ?? "provider error";
+      }
     }
   }
 
   const unusableReason = authFailure
     ? "agent reported it is not logged in; no skill decision was made"
-    : !sawResult
-      ? "transcript contains no result event; the run was truncated or the process died"
-      : undefined;
+    : providerError !== undefined
+      ? `provider error: ${providerError}`
+      : !sawResult
+        ? "transcript contains no result event; the run was truncated or the process died"
+        : undefined;
 
   return {
     invokedSkills: invoked,

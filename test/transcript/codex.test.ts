@@ -27,7 +27,12 @@ describe("parseCodexTranscript", () => {
     const jsonl = [
       JSON.stringify({
         type: "item.completed",
-        item: { type: "command_execution", command: `sed -n '1,10p' '/Users/First Last/pack/.codex/skills/alpha/SKILL.md'` },
+        item: {
+          type: "command_execution",
+          command: `sed -n '1,10p' '/Users/First Last/pack/.codex/skills/alpha/SKILL.md'`,
+          exit_code: 0,
+          status: "completed",
+        },
       }),
       JSON.stringify({ type: "turn.completed" }),
     ].join("\n");
@@ -42,7 +47,12 @@ describe("parseCodexTranscript", () => {
     const jsonl = [
       JSON.stringify({
         type: "item.completed",
-        item: { type: "command_execution", command: `sed -n '1,10p' '/home/user/.agents/skills/intruder/SKILL.md'` },
+        item: {
+          type: "command_execution",
+          command: `sed -n '1,10p' '/home/user/.agents/skills/intruder/SKILL.md'`,
+          exit_code: 0,
+          status: "completed",
+        },
       }),
       JSON.stringify({ type: "turn.completed" }),
     ].join("\n");
@@ -68,7 +78,10 @@ describe("parseCodexTranscript", () => {
 
   it("counts a skill once however many times its file is read", () => {
     const read = (path: string) =>
-      JSON.stringify({ type: "item.completed", item: { type: "command_execution", command: `sed -n '1,10p' '${path}'` } });
+      JSON.stringify({
+        type: "item.completed",
+        item: { type: "command_execution", command: `sed -n '1,10p' '${path}'`, exit_code: 0, status: "completed" },
+      });
     const jsonl = [
       read("/pack/alpha/SKILL.md"),
       read("/pack/alpha/SKILL.md"),
@@ -82,5 +95,58 @@ describe("parseCodexTranscript", () => {
     const jsonl = ["}{", JSON.stringify({ type: "turn.completed" })].join("\n");
 
     expect(parseCodexTranscript(jsonl, "/pack").usable).toBe(true);
+  });
+
+  it("does not treat a directory listing as a skill read", () => {
+    const jsonl = [
+      JSON.stringify({
+        type: "item.completed",
+        item: { type: "command_execution", command: "ls /pack/alpha/SKILL.md", exit_code: 0, status: "completed" },
+      }),
+      JSON.stringify({ type: "turn.completed" }),
+    ].join("\n");
+
+    const result = parseCodexTranscript(jsonl, "/pack");
+
+    expect(result.invokedSkills).toEqual([]);
+    expect(result.usable).toBe(false);
+    expect(result.unusableReason).toMatch(/ambiguous skill command/);
+  });
+
+  it("does not treat a failed read as a skill activation", () => {
+    const jsonl = [
+      JSON.stringify({
+        type: "item.completed",
+        item: { type: "command_execution", command: "cat /pack/alpha/SKILL.md", exit_code: 1, status: "failed" },
+      }),
+      JSON.stringify({ type: "turn.completed" }),
+    ].join("\n");
+
+    const result = parseCodexTranscript(jsonl, "/pack");
+
+    expect(result.invokedSkills).toEqual([]);
+    expect(result.usable).toBe(false);
+    expect(result.unusableReason).toMatch(/failed skill read/);
+  });
+
+  it("does not treat a started read as a skill activation", () => {
+    const jsonl = [
+      JSON.stringify({
+        type: "item.started",
+        item: {
+          type: "command_execution",
+          command: "sed -n '1,10p' '/pack/alpha/SKILL.md'",
+          exit_code: null,
+          status: "in_progress",
+        },
+      }),
+      JSON.stringify({ type: "turn.completed" }),
+    ].join("\n");
+
+    const result = parseCodexTranscript(jsonl, "/pack");
+
+    expect(result.invokedSkills).toEqual([]);
+    expect(result.usable).toBe(false);
+    expect(result.unusableReason).toMatch(/did not complete/);
   });
 });

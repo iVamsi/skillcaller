@@ -67,7 +67,8 @@ export function buildCollisionMatrix(
     for (const answeredBy of skills) {
       if (promptsFor === answeredBy) continue;
       const rate = rateFor(promptsFor, answeredBy);
-      if (rate >= threshold) collisions.push({ promptsFor, answeredBy, rate });
+      // A threshold of 0 reports any real cross-invocation, not pairs that never fired.
+      if (rate > 0 && rate >= threshold) collisions.push({ promptsFor, answeredBy, rate });
     }
   }
 

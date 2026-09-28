@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { runCorpus, runPackCorpora } from "../../src/runner/run-corpus.js";
+import { runPackCorpora, type RunPackOptions } from "../../src/runner/run-corpus.js";
 import type { AgentAdapter, RunRequest } from "../../src/adapters/types.js";
 import type { Corpus } from "../../src/corpus/schema.js";
 import type { RunOutcome } from "../../src/metrics/types.js";
@@ -21,10 +21,16 @@ function adapterOf(
 
 const hit: RunOutcome = { invokedSkills: ["target"], usable: true, costUsd: 0.01 };
 
-describe("runCorpus", () => {
+function runOne(corpus: Corpus, adapter: AgentAdapter, options: RunPackOptions) {
+  return runPackCorpora([{ directory: options.packDir, description: "", corpus }], adapter, options).then(
+    (groups) => groups[0] ?? [],
+  );
+}
+
+describe("runPackCorpora", () => {
   it("runs every prompt the configured number of times", async () => {
     const calls: string[] = [];
-    const outcomes = await runCorpus(corpus, adapterOf((request) => {
+    const outcomes = await runOne(corpus, adapterOf((request) => {
       calls.push(request.prompt);
       return hit;
     }), { packDir: "/pack" });
@@ -35,13 +41,13 @@ describe("runCorpus", () => {
   });
 
   it("labels each prompt with the expectation it came from", async () => {
-    const outcomes = await runCorpus(corpus, adapterOf(() => hit), { packDir: "/pack" });
+    const outcomes = await runOne(corpus, adapterOf(() => hit), { packDir: "/pack" });
 
     expect(outcomes.map((outcome) => outcome.expectation)).toEqual(["trigger", "trigger", "no-trigger"]);
   });
 
   it("keeps prompt order even when runs finish out of order", async () => {
-    const outcomes = await runCorpus(
+    const outcomes = await runOne(
       corpus,
       adapterOf(async (request) => {
         // "a" resolves last; results must still come back in corpus order.
@@ -57,7 +63,7 @@ describe("runCorpus", () => {
   it("never exceeds the concurrency limit", async () => {
     let inFlight = 0;
     let peak = 0;
-    await runCorpus(
+    await runOne(
       corpus,
       adapterOf(async () => {
         inFlight += 1;
@@ -74,7 +80,7 @@ describe("runCorpus", () => {
 
   it("records an adapter crash as an unusable run instead of aborting the suite", async () => {
     let call = 0;
-    const outcomes = await runCorpus(
+    const outcomes = await runOne(
       corpus,
       adapterOf(() => {
         call += 1;
@@ -92,7 +98,7 @@ describe("runCorpus", () => {
 
   it("passes the pack directory and model through to the adapter", async () => {
     const seen: RunRequest[] = [];
-    await runCorpus(corpus, adapterOf((request) => { seen.push(request); return hit; }), {
+    await runOne(corpus, adapterOf((request) => { seen.push(request); return hit; }), {
       packDir: "/packs/mine",
       model: "claude-haiku-4-5-20251001",
     });
@@ -103,7 +109,7 @@ describe("runCorpus", () => {
 
   it("reports progress as runs complete", async () => {
     const seen: number[] = [];
-    await runCorpus(corpus, adapterOf(() => hit), {
+    await runOne(corpus, adapterOf(() => hit), {
       packDir: "/pack",
       onProgress: (completed, total) => {
         seen.push(completed);
@@ -118,7 +124,7 @@ describe("runCorpus", () => {
   it("uses corpus.timeoutMs when options.timeoutMs is not provided", async () => {
     const customCorpus: Corpus = { ...corpus, timeoutMs: 42000 };
     const seen: RunRequest[] = [];
-    await runCorpus(customCorpus, adapterOf((request) => { seen.push(request); return hit; }), {
+    await runOne(customCorpus, adapterOf((request) => { seen.push(request); return hit; }), {
       packDir: "/pack",
     });
 
@@ -128,7 +134,7 @@ describe("runCorpus", () => {
   it("options.timeoutMs overrides corpus.timeoutMs", async () => {
     const customCorpus: Corpus = { ...corpus, timeoutMs: 42000 };
     const seen: RunRequest[] = [];
-    await runCorpus(customCorpus, adapterOf((request) => { seen.push(request); return hit; }), {
+    await runOne(customCorpus, adapterOf((request) => { seen.push(request); return hit; }), {
       packDir: "/pack",
       timeoutMs: 15000,
     });

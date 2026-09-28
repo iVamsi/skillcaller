@@ -1,10 +1,10 @@
-import { spawn } from "node:child_process";
 import { mkdtempSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RunOutcome } from "../metrics/types.js";
 import { parseClaudeCodeTranscript } from "../transcript/claude-code.js";
 import { installPack } from "./install-pack.js";
+import { spawnCli, unusable } from "./spawn-cli.js";
 import type { AgentAdapter, RunRequest } from "./types.js";
 
 /**
@@ -37,13 +37,6 @@ export interface ClaudeCodeAdapterOptions {
   readonly isolateConfigDir?: boolean;
 }
 
-interface SpawnResult {
-  readonly stdout: string;
-  readonly stderr: string;
-  readonly code: number | null;
-  readonly timedOut: boolean;
-}
-
 export class ClaudeCodeAdapter implements AgentAdapter {
   readonly id = "claude-code";
 
@@ -67,7 +60,13 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       if (request.model !== undefined) args.push("--model", request.model);
 
       configDir = this.options.isolateConfigDir === true ? mkdtempSync(join(tmpdir(), "skillcaller-cfg-")) : undefined;
-      const result = await this.spawnCli(args, workspace, request.timeoutMs ?? DEFAULT_TIMEOUT_MS, configDir);
+      const result = await spawnCli(
+        this.options.binary ?? "claude",
+        args,
+        workspace,
+        request.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+        configDir === undefined ? process.env : { ...process.env, CLAUDE_CONFIG_DIR: configDir },
+      );
 
       if (result.timedOut) {
         return unusable(`claude timed out after ${request.timeoutMs ?? DEFAULT_TIMEOUT_MS}ms`);
@@ -95,51 +94,4 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       if (configDir !== undefined) rmSync(configDir, { recursive: true, force: true });
     }
   }
-
-  private spawnCli(
-    args: readonly string[],
-    cwd: string,
-    timeoutMs: number,
-    configDir: string | undefined,
-  ): Promise<SpawnResult> {
-    return new Promise((resolve) => {
-      const env = { ...process.env };
-      if (configDir !== undefined) env["CLAUDE_CONFIG_DIR"] = configDir;
-
-      const child = spawn(this.options.binary ?? "claude", [...args], {
-        cwd,
-        env,
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-
-      const MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
-      let stdout = "";
-      let stderr = "";
-      let timedOut = false;
-
-      const timer = setTimeout(() => {
-        timedOut = true;
-        child.kill("SIGKILL");
-      }, timeoutMs);
-
-      child.stdout.on("data", (chunk: Buffer) => {
-        if (stdout.length < MAX_OUTPUT_BYTES) stdout += chunk.toString();
-      });
-      child.stderr.on("data", (chunk: Buffer) => {
-        if (stderr.length < MAX_OUTPUT_BYTES) stderr += chunk.toString();
-      });
-      child.on("error", (error) => {
-        clearTimeout(timer);
-        resolve({ stdout, stderr: `${stderr}${error.message}`, code: null, timedOut });
-      });
-      child.on("close", (code) => {
-        clearTimeout(timer);
-        resolve({ stdout, stderr, code, timedOut });
-      });
-    });
-  }
-}
-
-function unusable(reason: string): RunOutcome {
-  return { invokedSkills: [], usable: false, unusableReason: reason, costUsd: 0 };
 }
