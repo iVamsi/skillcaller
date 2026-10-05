@@ -1,4 +1,4 @@
-import type { Corpus } from "../corpus/schema.js";
+import { caseId, type Corpus } from "../corpus/schema.js";
 import type { PromptOutcome, PromptReport, SkillReport } from "./types.js";
 
 function percent(value: number): string {
@@ -30,6 +30,7 @@ function scorePrompt(skill: string, outcome: PromptOutcome): PromptReport {
   }
 
   return {
+    id: caseId(skill, outcome.expectation, outcome.prompt),
     prompt: outcome.prompt,
     expectation: outcome.expectation,
     rate:

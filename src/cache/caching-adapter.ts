@@ -50,6 +50,24 @@ export class CachingAdapter implements AgentAdapter {
     return outcome;
   }
 
+  /**
+   * How many of these requests a run would answer from the cache, numbering samples exactly as
+   * runPrompt does. Reads only; nothing is reserved or written.
+   */
+  async countCached(requests: readonly RunRequest[]): Promise<number> {
+    const identity = await this.agentIdentity();
+    if (identity === undefined) return 0;
+    const next = new Map(this.served);
+    let cached = 0;
+    for (const request of requests) {
+      const key = this.keyFor(identity, request);
+      const index = next.get(key) ?? 0;
+      next.set(key, index + 1);
+      if (this.read(join(this.cacheDir, SCHEMA, key, `${index}.json`)) !== undefined) cached += 1;
+    }
+    return cached;
+  }
+
   async close(): Promise<void> {
     await this.inner.close?.();
   }

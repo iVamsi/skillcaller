@@ -17,13 +17,19 @@ export interface Pack {
   readonly skillsWithoutCorpus: readonly string[];
 }
 
-function frontmatterDescription(skillFile: string): string {
-  // A leading BOM would empty the description
+/** The YAML frontmatter of a SKILL.md, or an empty object when it has none. */
+export function readFrontmatter(skillFile: string): Readonly<Record<string, unknown>> {
+  // A leading BOM would hide the frontmatter
   const text = readFileSync(skillFile, "utf8").replace(/^\uFEFF/, "").trimStart();
   const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
-  if (match?.[1] === undefined) return "";
-  const parsed = parseYaml(match[1]) as { description?: unknown } | null;
-  return typeof parsed?.description === "string" ? parsed.description : "";
+  if (match?.[1] === undefined) return {};
+  const parsed: unknown = parseYaml(match[1]);
+  return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : {};
+}
+
+function frontmatterDescription(skillFile: string): string {
+  const description = readFrontmatter(skillFile).description;
+  return typeof description === "string" ? description : "";
 }
 
 /** Reads a directory of skills, each holding SKILL.md and optionally evals/triggers.yaml. */

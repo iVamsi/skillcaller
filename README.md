@@ -151,6 +151,8 @@ answered every usable trigger run.
 | --- | --- |
 | `skillcaller run [pack]` | Measure activation, enforce gates, report collisions (auto-detects standard dirs if omitted) |
 | `skillcaller init <skill-dir>` | Scaffold an `evals/triggers.yaml` for a skill |
+| `skillcaller validate [pack]` | Check skill names, descriptions, corpora, links, and size limits without calling an agent |
+| `skillcaller plan [pack]` | List every case, its id, repeats, timeout, and how many calls the cache would answer, without calling an agent |
 
 ### Useful CLI Flags
 
@@ -168,6 +170,9 @@ answered every usable trigger run.
 | `--max-calls <n>` | Refuse to start a run that needs more agent calls than this | `1000` |
 | `--deadline <ms>` | Stop the whole run after this many milliseconds | (none) |
 | `--max-cost <usd>` | Stop the run once this invocation has spent this many dollars. Agents that report no cost never reach it | (none) |
+
+Each prompt has a case id derived from its text, so reordering a corpus keeps ids. `plan` and the
+JSON report use the same ids.
 
 A run stopped by `--deadline`, `--max-cost`, or Ctrl-C kills the running agents, marks the report
 as stopped early (`run.stoppedEarly` in JSON), and exits 1. A prompt is measured only when at least

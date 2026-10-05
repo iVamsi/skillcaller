@@ -6,8 +6,8 @@ import type { CollisionMatrix } from "../../src/metrics/collisions.js";
 const passing: SkillReport = {
   skill: "alpha",
   prompts: [
-    { prompt: "do alpha", expectation: "trigger", rate: 1, usableRuns: 5, totalRuns: 5, otherSkills: {} },
-    { prompt: "unrelated", expectation: "no-trigger", rate: 0, usableRuns: 5, totalRuns: 5, otherSkills: {} },
+    { id: "case/do alpha", prompt: "do alpha", expectation: "trigger", rate: 1, usableRuns: 5, totalRuns: 5, otherSkills: {} },
+    { id: "case/unrelated", prompt: "unrelated", expectation: "no-trigger", rate: 0, usableRuns: 5, totalRuns: 5, otherSkills: {} },
   ],
   triggerRate: 1,
   noTriggerRate: 0,
@@ -28,7 +28,7 @@ const failing: SkillReport = {
   passed: false,
   failures: ["trigger rate 40% is below the gate of 90%"],
   prompts: [
-    { prompt: "do beta", expectation: "trigger", rate: 0.4, usableRuns: 5, totalRuns: 5, otherSkills: { alpha: 3 } },
+    { id: "case/do beta", prompt: "do beta", expectation: "trigger", rate: 0.4, usableRuns: 5, totalRuns: 5, otherSkills: { alpha: 3 } },
   ],
 };
 

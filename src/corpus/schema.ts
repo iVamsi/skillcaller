@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 
@@ -35,6 +36,11 @@ export interface Corpus {
   readonly gates: Gates;
   readonly shouldTrigger: readonly string[];
   readonly shouldNotTrigger: readonly string[];
+}
+
+/** Derived from the prompt text, so reordering a corpus keeps every id. */
+export function caseId(skill: string, expectation: "trigger" | "no-trigger", prompt: string): string {
+  return `${skill}/${createHash("sha256").update(`${expectation}\0${prompt}`).digest("hex").slice(0, 12)}`;
 }
 
 function findDuplicate(prompts: readonly string[]): string | undefined {

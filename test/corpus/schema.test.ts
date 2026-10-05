@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseCorpus } from "../../src/corpus/schema.js";
+import { caseId, parseCorpus } from "../../src/corpus/schema.js";
 
 const minimal = `
 skill: building-cmp-uis
@@ -58,5 +58,13 @@ describe("parseCorpus", () => {
   it("parses optional timeout_ms when provided", () => {
     const corpus = parseCorpus(`skill: s\ntimeout_ms: 45000\nshould_trigger: ["a"]`, "triggers.yaml");
     expect(corpus.timeoutMs).toBe(45000);
+  });
+});
+
+describe("caseId", () => {
+  it("survives reordering and differs by expectation", () => {
+    expect(caseId("alpha", "trigger", "do alpha")).toBe(caseId("alpha", "trigger", "do alpha"));
+    expect(caseId("alpha", "trigger", "do alpha")).not.toBe(caseId("alpha", "no-trigger", "do alpha"));
+    expect(caseId("alpha", "trigger", "do alpha")).toMatch(/^alpha\/[0-9a-f]{12}$/);
   });
 });

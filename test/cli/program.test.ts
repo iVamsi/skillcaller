@@ -354,3 +354,53 @@ describe("watchBudget", () => {
     expect(String(controller.signal.reason)).toMatch(/budget/);
   });
 });
+
+describe("skillcaller validate", () => {
+  it("passes a valid pack and fails one with a bad skill name", async () => {
+    const { packDir } = pack({});
+    await run(["validate", packDir]);
+    expect(process.exitCode).toBe(0);
+
+    writeFileSync(join(packDir, "alpha", "SKILL.md"), "---\nname: Alpha\ndescription: d\n---\n");
+    await run(["validate", packDir]);
+    expect(process.exitCode).toBe(1);
+    expect(stdout).toMatch(/alpha.*lowercase/);
+  });
+});
+
+describe("skillcaller plan", () => {
+  it("names the same case ids that the run report later uses", async () => {
+    const { packDir, scriptFile } = pack({ "do alpha": [["alpha"]], "do nothing": [[]] });
+
+    await run(["plan", packDir, "--agent", "fake", "--script", scriptFile, "--no-cache", "--format", "json"]);
+    const plan = JSON.parse(stdout) as { calls: number; skills: { cases: { id: string }[] }[] };
+    stdout = "";
+    await run(["run", packDir, "--agent", "fake", "--script", scriptFile, "--no-cache", "--format", "json"]);
+    const report = JSON.parse(stdout) as { skills: { prompts: { id: string }[] }[] };
+
+    expect(plan.calls).toBe(2);
+    expect(plan.skills[0]?.cases.map((c) => c.id)).toEqual(report.skills[0]?.prompts.map((p) => p.id));
+  });
+
+  it("counts the cached answers a run would reuse", async () => {
+    const { packDir, scriptFile } = pack({ "do alpha": [["alpha"]], "do nothing": [[]] });
+    const cacheDir = mkdtempSync(join(tmpdir(), "skillcaller-plan-cache-"));
+    const common = [packDir, "--agent", "fake", "--script", scriptFile, "--cache-dir", cacheDir];
+
+    await run(["run", ...common, "--format", "json"]);
+    stdout = "";
+    await run(["plan", ...common, "--format", "json"]);
+
+    const plan = JSON.parse(stdout) as { cachedCalls: number };
+    expect(plan.cachedCalls).toBe(2);
+  });
+
+  it("reports the plan in plain text by default", async () => {
+    const { packDir } = pack({});
+
+    await run(["plan", packDir, "--agent", "fake", "--no-cache"]);
+
+    expect(stdout).toMatch(/alpha: 2 prompts x 1 run/);
+    expect(stdout).toMatch(/2 agent calls/);
+  });
+});

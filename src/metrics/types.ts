@@ -19,6 +19,8 @@ export interface PromptOutcome {
 }
 
 export interface PromptReport {
+  /** Stable across corpus reordering; matches the ids `skillcaller plan` prints. */
+  readonly id: string;
   readonly prompt: string;
   readonly expectation: Expectation;
   /** Undefined when fewer than half the attempted runs were usable. */

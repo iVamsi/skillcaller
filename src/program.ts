@@ -11,6 +11,8 @@ import { installPack } from "./adapters/install-pack.js";
 import type { AgentAdapter } from "./adapters/types.js";
 import { CachingAdapter } from "./cache/caching-adapter.js";
 import { positiveInt, rate } from "./cli-options.js";
+import { planPack, renderPlan } from "./commands/plan.js";
+import { validatePack } from "./commands/validate.js";
 import { buildCollisionMatrix, type CollisionMatrix, type CorpusOutcomes } from "./metrics/collisions.js";
 import { scoreSkill } from "./metrics/score.js";
 import type { RunOutcome, SkillReport } from "./metrics/types.js";
@@ -109,6 +111,62 @@ function agentCallCount(pack: Pack): number {
   return total;
 }
 
+function requirePackDir(packArg: string | undefined): string {
+  const packDir = resolvePackDir(packArg);
+  if (packDir === undefined) {
+    throw new Error(
+      `no skill pack path provided, and none of ${STANDARD_SKILL_DIRS.map((d) => `"${d}"`).join(", ")} exist in the current directory`,
+    );
+  }
+  return packDir;
+}
+
+function defaultModel(flags: { agent: string; model?: string }): string | undefined {
+  return flags.model ?? (flags.agent === "claude-code" ? DEFAULT_MODEL : undefined);
+}
+
+function validateCommand(packArg: string | undefined): void {
+  const { errors, warnings } = validatePack(requirePackDir(packArg));
+  const lines = [...errors.map((e) => `error: ${e}`), ...warnings.map((w) => `warning: ${w}`)];
+  lines.push(errors.length === 0 ? "Pack is valid." : `${errors.length} problem(s) found.`);
+  process.stdout.write(`${lines.join("\n")}\n`);
+  process.exitCode = errors.length === 0 ? 0 : 1;
+}
+
+async function planCommand(packArg: string | undefined, flags: RunFlags): Promise<void> {
+  if (flags.format !== "terminal" && flags.format !== "json") {
+    throw new Error(`--format expects terminal or json, got "${flags.format}"`);
+  }
+  const pack = loadPack(requirePackDir(packArg));
+  const model = defaultModel(flags);
+  const timeoutMs = flags.timeout === undefined ? undefined : positiveInt(flags.timeout, 180_000, "--timeout");
+  const plan = planPack(pack, {
+    agent: flags.agent,
+    concurrency: positiveInt(flags.concurrency, 2, "--concurrency"),
+    ...(model === undefined ? {} : { model }),
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
+  });
+
+  let cachedCalls: number | undefined;
+  if (flags.cache) {
+    const cache = new CachingAdapter(adapterFor(flags.agent, flags.script), flags.cacheDir);
+    cachedCalls = await cache.countCached(
+      plan.skills.flatMap((skill) =>
+        skill.cases.flatMap((c) =>
+          Array.from({ length: skill.runs }, () => ({
+            prompt: c.prompt,
+            packDir: pack.root,
+            ...(model === undefined ? {} : { model }),
+            ...(skill.timeoutMs === null ? {} : { timeoutMs: skill.timeoutMs }),
+          })),
+        ),
+      ),
+    );
+  }
+  const full = cachedCalls === undefined ? plan : { ...plan, cachedCalls };
+  process.stdout.write(`${flags.format === "json" ? JSON.stringify(full, null, 2) : renderPlan(full)}\n`);
+}
+
 async function runPack(packArg: string | undefined, flags: RunFlags): Promise<void> {
   if (!FORMATS.includes(flags.format as (typeof FORMATS)[number])) {
     process.stderr.write(`skillcaller: --format expects one of ${FORMATS.join(", ")}, got "${flags.format}"\n`);
@@ -136,7 +194,7 @@ async function runPack(packArg: string | undefined, flags: RunFlags): Promise<vo
     const base = adapterFor(flags.agent, flags.script);
     const adapter = flags.cache ? new CachingAdapter(base, flags.cacheDir) : base;
     try {
-      const model = flags.model ?? (flags.agent === "claude-code" ? DEFAULT_MODEL : undefined);
+      const model = defaultModel(flags);
       const run: RunInfo = {
         skillcaller: VERSION,
         agent: base.id,
@@ -280,27 +338,40 @@ export function createProgram(): Command {
     .description("Trigger-reliability evals for Agent Skills")
     .version(VERSION);
 
-  program
-    .command("run")
-    .argument("[pack]", "directory of skills (defaults to auto-discovering ./skills, .agents/skills, .claude/skills, or .cursor/skills)")
-    .option("-a, --agent <agent>", "claude-code, codex, cursor, antigravity or fake", "claude-code")
-    .option("-m, --model <model>", "model to evaluate against")
-    .option("-c, --concurrency <n>", "parallel agent runs", "2")
-    .option("-t, --timeout <ms>", "per-prompt agent timeout in milliseconds")
+  const withExecutionOptions = (command: Command): Command =>
+    command
+      .argument("[pack]", "directory of skills (defaults to auto-discovering ./skills, .agents/skills, .claude/skills, or .cursor/skills)")
+      .option("-a, --agent <agent>", "claude-code, codex, cursor, antigravity or fake", "claude-code")
+      .option("-m, --model <model>", "model to evaluate against")
+      .option("-c, --concurrency <n>", "parallel agent runs", "2")
+      .option("-t, --timeout <ms>", "per-prompt agent timeout in milliseconds")
+      .option("--script <file>", "scripted outcomes for the fake agent")
+      .option("--no-cache", "re-run every prompt instead of reusing cached answers")
+      .option("--cache-dir <dir>", "where cached answers live", ".skillcaller-cache");
+
+  withExecutionOptions(program.command("run"))
     .option("-f, --format <format>", "terminal, json, markdown or junit", "terminal")
-    .option("--script <file>", "scripted outcomes for the fake agent")
     .option(
       "--collision-threshold <rate>",
       "report a collision at or above this rate (0 = any positive rate, 1 = every run)",
       "0.2",
     )
-    .option("--no-cache", "re-run every prompt instead of reusing cached answers")
-    .option("--cache-dir <dir>", "where cached answers live", ".skillcaller-cache")
     .option("--max-calls <n>", "refuse to start a run needing more agent calls than this", "1000")
     .option("--deadline <ms>", "stop the whole run after this many milliseconds")
     .option("--max-cost <usd>", "stop the run once fresh spend reaches this many dollars")
     .description("Measure how reliably each skill triggers")
     .action(runPack);
+
+  withExecutionOptions(program.command("plan"))
+    .option("-f, --format <format>", "terminal or json", "terminal")
+    .description("Show what a run would do, without calling an agent")
+    .action(planCommand);
+
+  program
+    .command("validate")
+    .argument("[pack]", "directory of skills (defaults to auto-discovering standard directories)")
+    .description("Check skills and corpora for problems, without calling an agent")
+    .action(validateCommand);
 
   program
     .command("init")
