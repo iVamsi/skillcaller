@@ -11,6 +11,8 @@ import { installPack } from "./adapters/install-pack.js";
 import type { AgentAdapter } from "./adapters/types.js";
 import { CachingAdapter } from "./cache/caching-adapter.js";
 import { positiveInt, rate } from "./cli-options.js";
+import { AgentUnavailableError } from "./adapters/spawn-cli.js";
+import { diagnose, renderDiagnosis } from "./commands/doctor.js";
 import { planPack, renderPlan } from "./commands/plan.js";
 import { validatePack } from "./commands/validate.js";
 import { buildCollisionMatrix, type CollisionMatrix, type CorpusOutcomes } from "./metrics/collisions.js";
@@ -125,6 +127,25 @@ function defaultModel(flags: { agent: string; model?: string }): string | undefi
   return flags.model ?? (flags.agent === "claude-code" ? DEFAULT_MODEL : undefined);
 }
 
+/** Null when the CLI runs but cannot say its version. A CLI that cannot start stops the run here, once. */
+async function agentVersion(adapter: AgentAdapter, agent: string): Promise<string | null> {
+  if (adapter.version === undefined) return null;
+  try {
+    return await adapter.version();
+  } catch (error) {
+    if (error instanceof AgentUnavailableError) {
+      throw new Error(`${error.message}; run "skillcaller doctor --agent ${agent}" to check the setup`);
+    }
+    return null;
+  }
+}
+
+async function doctorCommand(flags: { agent: string; format: string }): Promise<void> {
+  const diagnosis = await diagnose(flags.agent);
+  process.stdout.write(`${flags.format === "json" ? JSON.stringify(diagnosis, null, 2) : renderDiagnosis(diagnosis)}\n`);
+  process.exitCode = diagnosis.ok ? 0 : 1;
+}
+
 function validateCommand(packArg: string | undefined): void {
   const { errors, warnings } = validatePack(requirePackDir(packArg));
   const lines = [...errors.map((e) => `error: ${e}`), ...warnings.map((w) => `warning: ${w}`)];
@@ -198,7 +219,7 @@ async function runPack(packArg: string | undefined, flags: RunFlags): Promise<vo
       const run: RunInfo = {
         skillcaller: VERSION,
         agent: base.id,
-        agentVersion: base.version === undefined ? null : await base.version().catch(() => null),
+        agentVersion: await agentVersion(base, flags.agent),
         model: model ?? null,
         packDigest,
       };
@@ -366,6 +387,13 @@ export function createProgram(): Command {
     .option("-f, --format <format>", "terminal or json", "terminal")
     .description("Show what a run would do, without calling an agent")
     .action(planCommand);
+
+  program
+    .command("doctor")
+    .option("-a, --agent <agent>", "claude-code, codex, cursor or antigravity", "claude-code")
+    .option("-f, --format <format>", "terminal or json", "terminal")
+    .description("Check that an agent CLI is installed and usable, without sending a prompt")
+    .action(doctorCommand);
 
   program
     .command("validate")

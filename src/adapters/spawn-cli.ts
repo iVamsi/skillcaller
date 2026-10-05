@@ -117,9 +117,15 @@ export function spawnCli(binary: string, args: readonly string[], options: Spawn
 
 const VERSION_TIMEOUT_MS = 15_000;
 
+/** The CLI could not be started at all, usually because it is not installed or not on PATH. */
+export class AgentUnavailableError extends Error {}
+
 /** `<binary> --version`, trimmed. Rejects on failure so callers never key a cache on a guess. */
 export async function cliVersion(binary: string): Promise<string> {
   const result = await spawnCli(binary, ["--version"], { cwd: tmpdir(), timeoutMs: VERSION_TIMEOUT_MS });
+  if (result.failure === "spawn") {
+    throw new AgentUnavailableError(`${binary} could not start (${result.stderr.trim().slice(0, 300)})`);
+  }
   const version = result.stdout.trim();
   if (result.failure !== undefined || result.code !== 0 || version === "") {
     const detail = result.stderr.trim().slice(0, 300) || (result.failure ?? `exit code ${result.code}`);

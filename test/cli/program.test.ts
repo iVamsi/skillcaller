@@ -404,3 +404,30 @@ describe("skillcaller plan", () => {
     expect(stdout).toMatch(/2 agent calls/);
   });
 });
+
+describe("skillcaller doctor", () => {
+  it("exits 1 when the agent CLI is missing", async () => {
+    vi.stubEnv("PATH", mkdtempSync(join(tmpdir(), "skillcaller-empty-path-")));
+    try {
+      await run(["doctor", "--agent", "codex"]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+
+    expect(process.exitCode).toBe(1);
+    expect(stdout).toMatch(/codex/);
+  });
+});
+
+describe("skillcaller run preflight", () => {
+  it("refuses to start when the agent CLI is missing, instead of failing every prompt", async () => {
+    const { packDir } = pack({});
+    vi.stubEnv("PATH", mkdtempSync(join(tmpdir(), "skillcaller-empty-path-")));
+    try {
+      await expect(run(["run", packDir, "--agent", "codex", "--no-cache"])).rejects.toThrow(/skillcaller doctor/);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    expect(stderr).not.toMatch(/agent call/);
+  });
+});
