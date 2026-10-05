@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Command } from "commander";
 import { AntigravityAdapter } from "./adapters/antigravity.js";
@@ -6,6 +7,7 @@ import { ClaudeCodeAdapter } from "./adapters/claude-code.js";
 import { CodexAdapter } from "./adapters/codex.js";
 import { CursorAdapter } from "./adapters/cursor.js";
 import { FakeAdapter } from "./adapters/fake.js";
+import { installPack } from "./adapters/install-pack.js";
 import type { AgentAdapter } from "./adapters/types.js";
 import { CachingAdapter } from "./cache/caching-adapter.js";
 import { positiveInt, rate } from "./cli-options.js";
@@ -13,8 +15,16 @@ import { buildCollisionMatrix, type CollisionMatrix, type CorpusOutcomes } from 
 import { scoreSkill } from "./metrics/score.js";
 import type { SkillReport } from "./metrics/types.js";
 import { loadPack, type Pack } from "./pack/load-pack.js";
-import { renderJUnit, renderJson, renderMarkdown, renderTerminal, runPassed } from "./report/render.js";
+import {
+  renderJUnit,
+  renderJson,
+  renderMarkdown,
+  renderTerminal,
+  runPassed,
+  type RunInfo,
+} from "./report/render.js";
 import { runPackCorpora } from "./runner/run-corpus.js";
+import { VERSION } from "./version.js";
 
 export const STANDARD_SKILL_DIRS = [
   "skills",
@@ -91,17 +101,32 @@ async function runPack(packArg: string | undefined, flags: RunFlags): Promise<vo
     return;
   }
   const pack = loadPack(packDir);
-  const base = adapterFor(flags.agent, flags.script);
-  const adapter = flags.cache ? new CachingAdapter(base, flags.cacheDir) : base;
+  // Agents stage from this copy, so edits to the source pack mid-run cannot change what is measured
+  const snapshot = mkdtempSync(join(tmpdir(), "skillcaller-pack-"));
   try {
-    await measurePack(pack, adapter, flags);
+    const packDigest = installPack(pack.root, snapshot);
+    const base = adapterFor(flags.agent, flags.script);
+    const adapter = flags.cache ? new CachingAdapter(base, flags.cacheDir) : base;
+    try {
+      const model = flags.model ?? (flags.agent === "claude-code" ? DEFAULT_MODEL : undefined);
+      const run: RunInfo = {
+        skillcaller: VERSION,
+        agent: base.id,
+        agentVersion: base.version === undefined ? null : await base.version().catch(() => null),
+        model: model ?? null,
+        packDigest,
+      };
+      await measurePack({ ...pack, root: snapshot }, adapter, flags, run);
+    } finally {
+      await adapter.close?.();
+    }
   } finally {
-    await adapter.close?.();
+    rmSync(snapshot, { recursive: true, force: true });
   }
 }
 
-async function measurePack(pack: Pack, adapter: AgentAdapter, flags: RunFlags): Promise<void> {
-  const model = flags.model ?? (flags.agent === "claude-code" ? DEFAULT_MODEL : undefined);
+async function measurePack(pack: Pack, adapter: AgentAdapter, flags: RunFlags, run: RunInfo): Promise<void> {
+  const model = run.model ?? undefined;
   const timeoutMs = flags.timeout === undefined ? undefined : positiveInt(flags.timeout, 180_000, "--timeout");
   const concurrency = positiveInt(flags.concurrency, 2, "--concurrency");
   const calls = agentCallCount(pack);
@@ -114,7 +139,7 @@ async function measurePack(pack: Pack, adapter: AgentAdapter, flags: RunFlags): 
   }
 
   if (pack.entries.length === 0) {
-    writeReport(flags.format, [], buildCollisionMatrix([]), pack.skillsWithoutCorpus);
+    writeReport(flags.format, [], buildCollisionMatrix([]), pack.skillsWithoutCorpus, run);
     process.exitCode = 1;
     return;
   }
@@ -157,7 +182,7 @@ async function measurePack(pack: Pack, adapter: AgentAdapter, flags: RunFlags): 
     threshold: rate(flags.collisionThreshold, 0.2, "--collision-threshold"),
   });
 
-  writeReport(flags.format, reports, matrix, pack.skillsWithoutCorpus);
+  writeReport(flags.format, reports, matrix, pack.skillsWithoutCorpus, run);
   process.exitCode = runPassed(reports, matrix) ? 0 : 1;
 }
 
@@ -166,10 +191,11 @@ function writeReport(
   reports: readonly SkillReport[],
   matrix: CollisionMatrix,
   skippedSkills: readonly string[],
+  run: RunInfo,
 ): void {
   const output =
     format === "json"
-      ? renderJson(reports, matrix, skippedSkills)
+      ? renderJson(reports, matrix, skippedSkills, run)
       : format === "markdown"
         ? renderMarkdown(reports, matrix, skippedSkills)
         : format === "junit"
@@ -183,7 +209,7 @@ export function createProgram(): Command {
   program
     .name("skillcaller")
     .description("Trigger-reliability evals for Agent Skills")
-    .version("0.1.1");
+    .version(VERSION);
 
   program
     .command("run")

@@ -37,7 +37,7 @@ describe.skipIf(!live)("ClaudeCodeAdapter (live)", () => {
     expect(outcome.usable).toBe(true);
     expect(outcome.invokedSkills).toContain("haiku-writer");
     expect(outcome.costUsd).toBeGreaterThan(0);
-    console.log(`live run cost: $${outcome.costUsd.toFixed(4)}`);
+    console.log(`live run cost: $${(outcome.costUsd ?? 0).toFixed(4)}`);
   });
 
   it("does not expose the user's own installed skills to the run", async () => {

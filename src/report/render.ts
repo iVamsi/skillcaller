@@ -2,6 +2,19 @@ import pc from "picocolors";
 import type { CollisionMatrix } from "../metrics/collisions.js";
 import type { SkillReport } from "../metrics/types.js";
 
+/** Identifies one evaluation, so a report can be traced back to what produced it. */
+export interface RunInfo {
+  readonly skillcaller: string;
+  readonly agent: string;
+  /** Null when the agent CLI could not report one. */
+  readonly agentVersion: string | null;
+  /** Null when the agent picks its own default. */
+  readonly model: string | null;
+  readonly packDigest: string;
+}
+
+export const REPORT_SCHEMA_VERSION = 2;
+
 export interface RenderOptions {
   readonly color?: boolean;
   readonly skippedSkills?: readonly string[];
@@ -35,7 +48,10 @@ export function renderTerminal(
       lines.push(`      ${red("-")} ${failure}`);
     }
     if (report.unusableRuns > 0) {
-      lines.push(dim(`      ${report.unusableRuns} run(s) could not be scored`));
+      lines.push(dim(`      ${report.unusableRuns} run(s) could not be scored:`));
+      for (const [reason, count] of Object.entries(report.unusableReasons)) {
+        lines.push(dim(`        ${reason} (${count})`));
+      }
     }
     if (report.contamination.length > 0) {
       lines.push(`      ${red("!")} reached skills outside the pack: ${report.contamination.join(", ")}`);
@@ -58,19 +74,21 @@ export function renderTerminal(
   }
 
   const totalCost = reports.reduce((sum, report) => sum + report.totalCostUsd, 0);
+  const unpriced = reports.reduce((sum, report) => sum + report.unpricedRuns, 0);
+  const cost = dim(`  cost ${money(totalCost)}${unpriced > 0 ? ` (${unpriced} run(s) reported no cost)` : ""}`);
   const failed = reports.filter((report) => !report.passed).length;
   const collisions = matrix?.collisions.length ?? 0;
   lines.push("");
   if (reports.length === 0) {
     lines.push(red("No skills were measured."));
   } else if (failed === 0 && collisions === 0) {
-    lines.push(green(`All ${reports.length} skill(s) passed.`) + dim(`  cost ${money(totalCost)}`));
+    lines.push(green(`All ${reports.length} skill(s) passed.`) + cost);
   } else {
     const parts = [
       ...(failed > 0 ? [`${failed} of ${reports.length} skill(s) failed`] : []),
       ...(collisions > 0 ? [`${collisions} collision(s) found`] : []),
     ];
-    lines.push(red(`${parts.join(", ")}.`) + dim(`  cost ${money(totalCost)}`));
+    lines.push(red(`${parts.join(", ")}.`) + cost);
   }
 
   return lines.join("\n");
@@ -85,9 +103,13 @@ export function renderJson(
   reports: readonly SkillReport[],
   matrix?: CollisionMatrix,
   skippedSkills: readonly string[] = [],
+  run?: RunInfo,
 ): string {
+  // Fields from schema 1 keep their names and meaning; schema 2 only adds
   return JSON.stringify(
     {
+      schemaVersion: REPORT_SCHEMA_VERSION,
+      ...(run === undefined ? {} : { run }),
       passed: runPassed(reports, matrix),
       skills: reports,
       skippedSkills,

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { RunOutcome } from "../metrics/types.js";
 import { parseAntigravityTranscript } from "../transcript/antigravity.js";
 import { installPack } from "./install-pack.js";
-import { spawnCli, unusable } from "./spawn-cli.js";
+import { cliVersion, spawnCli, unusable } from "./spawn-cli.js";
 import type { AgentAdapter, RunRequest } from "./types.js";
 
 const DEFAULT_TIMEOUT_MS = 180_000;
@@ -33,6 +33,10 @@ export class AntigravityAdapter implements AgentAdapter {
   private gate: Promise<void> = Promise.resolve();
 
   constructor(private readonly options: AntigravityAdapterOptions = {}) {}
+
+  version(): Promise<string> {
+    return cliVersion(this.options.binary ?? "agy");
+  }
 
   async runPrompt(request: RunRequest): Promise<RunOutcome> {
     const plugin = await this.ensurePlugin(request.packDir);
@@ -65,7 +69,6 @@ export class AntigravityAdapter implements AgentAdapter {
         ...(transcript.foreignSkills.length === 0 ? {} : { foreignSkills: transcript.foreignSkills }),
         usable: transcript.usable,
         ...(transcript.unusableReason === undefined ? {} : { unusableReason: transcript.unusableReason }),
-        costUsd: 0,
       };
     } finally {
       rmSync(workspace, { recursive: true, force: true });

@@ -14,6 +14,9 @@ const passing: SkillReport = {
   passed: true,
   failures: [],
   unusableRuns: 0,
+  unusableReasons: {},
+  cachedRuns: 0,
+  unpricedRuns: 0,
   totalCostUsd: 0.12,
   contamination: [],
 };
@@ -58,6 +61,22 @@ describe("renderTerminal", () => {
 
   it("reports total cost so a run can be budgeted", () => {
     expect(renderTerminal([passing], undefined, { color: false })).toContain("0.12");
+  });
+
+  it("says how many runs reported no cost, so $0.00 is not mistaken for free", () => {
+    const output = renderTerminal([{ ...passing, unpricedRuns: 3 }], undefined, { color: false });
+
+    expect(output).toMatch(/3 run\(s\) reported no cost/);
+  });
+
+  it("explains why runs could not be scored", () => {
+    const output = renderTerminal(
+      [{ ...passing, unusableRuns: 2, unusableReasons: { "claude failed: not logged in": 2 } }],
+      undefined,
+      { color: false },
+    );
+
+    expect(output).toContain("claude failed: not logged in (2)");
   });
 
   it("says plainly when everything passed", () => {

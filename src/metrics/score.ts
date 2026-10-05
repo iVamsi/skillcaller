@@ -5,6 +5,13 @@ function percent(value: number): string {
   return `${(value * 100).toFixed(0)}%`;
 }
 
+const MAX_REASON_LENGTH = 200;
+
+/** Masks token-like runs (API keys, session ids) that agent stderr can echo back. */
+function redact(reason: string): string {
+  return reason.replace(/[A-Za-z0-9_-]{24,}/g, "[redacted]").slice(0, MAX_REASON_LENGTH);
+}
+
 function scorePrompt(skill: string, outcome: PromptOutcome): PromptReport {
   const usable = outcome.runs.filter((run) => run.usable);
   const hits = usable.filter((run) => run.invokedSkills.includes(skill)).length;
@@ -79,6 +86,13 @@ export function scoreSkill(corpus: Corpus, outcomes: readonly PromptOutcome[]): 
     );
   }
 
+  const unusableReasons: Record<string, number> = {};
+  for (const run of allRuns) {
+    if (run.usable) continue;
+    const reason = redact(run.unusableReason ?? "no reason given");
+    unusableReasons[reason] = (unusableReasons[reason] ?? 0) + 1;
+  }
+
   return {
     skill: corpus.skill,
     prompts,
@@ -87,7 +101,10 @@ export function scoreSkill(corpus: Corpus, outcomes: readonly PromptOutcome[]): 
     passed: failures.length === 0,
     failures,
     unusableRuns: allRuns.filter((run) => !run.usable).length,
-    totalCostUsd: allRuns.reduce((sum, run) => sum + run.costUsd, 0),
+    unusableReasons,
+    cachedRuns: allRuns.filter((run) => run.cached === true).length,
+    unpricedRuns: allRuns.filter((run) => run.costUsd === undefined).length,
+    totalCostUsd: allRuns.reduce((sum, run) => sum + (run.costUsd ?? 0), 0),
     contamination,
   };
 }

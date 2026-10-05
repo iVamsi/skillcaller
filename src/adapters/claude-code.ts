@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { RunOutcome } from "../metrics/types.js";
 import { parseClaudeCodeTranscript } from "../transcript/claude-code.js";
 import { installPack } from "./install-pack.js";
-import { spawnCli, unusable } from "./spawn-cli.js";
+import { cliVersion, spawnCli, unusable } from "./spawn-cli.js";
 import type { AgentAdapter, RunRequest } from "./types.js";
 
 /**
@@ -41,6 +41,10 @@ export class ClaudeCodeAdapter implements AgentAdapter {
   readonly id = "claude-code";
 
   constructor(private readonly options: ClaudeCodeAdapterOptions = {}) {}
+
+  version(): Promise<string> {
+    return cliVersion(this.options.binary ?? "claude");
+  }
 
   async runPrompt(request: RunRequest): Promise<RunOutcome> {
     const workspace = realpathSync(mkdtempSync(join(tmpdir(), "skillcaller-ws-")));
@@ -87,7 +91,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
         ...(foreignSkills.length === 0 ? {} : { foreignSkills }),
         usable: transcript.usable,
         ...(transcript.unusableReason === undefined ? {} : { unusableReason: transcript.unusableReason }),
-        costUsd: transcript.costUsd,
+        ...(transcript.costUsd === undefined ? {} : { costUsd: transcript.costUsd }),
       };
     } finally {
       rmSync(workspace, { recursive: true, force: true });

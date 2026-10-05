@@ -5,7 +5,7 @@ export interface TranscriptResult {
   readonly visibleSkills: readonly string[];
   readonly usable: boolean;
   readonly unusableReason?: string;
-  readonly costUsd: number;
+  readonly costUsd?: number;
 }
 
 interface ContentBlock {
@@ -37,7 +37,7 @@ export function parseClaudeCodeTranscript(ndjson: string): TranscriptResult {
   const seen = new Set<string>();
   let visibleSkills: readonly string[] = [];
   let sawResult = false;
-  let costUsd = 0;
+  let costUsd: number | undefined;
   let authFailure = false;
   let providerError: string | undefined;
 
@@ -94,6 +94,6 @@ export function parseClaudeCodeTranscript(ndjson: string): TranscriptResult {
     visibleSkills,
     usable: unusableReason === undefined,
     ...(unusableReason === undefined ? {} : { unusableReason }),
-    costUsd,
+    ...(costUsd === undefined ? {} : { costUsd }),
   };
 }

@@ -154,4 +154,42 @@ describe("scoreSkill contamination", () => {
     expect(report.contamination).toEqual([]);
     expect(report.passed).toBe(true);
   });
+
+  it("keeps the reasons runs were unusable, grouped and with secrets masked", () => {
+    const failed = (reason: string) => ({ invokedSkills: [], usable: false, unusableReason: reason });
+    const report = scoreSkill(corpus, [
+      {
+        prompt: "a",
+        expectation: "trigger",
+        runs: [
+          failed("claude failed: not logged in"),
+          failed("claude failed: not logged in"),
+          failed("claude failed: bad key sk-ant-api03-abcdefghijklmnopqrstuvwxyz"),
+        ],
+      },
+    ]);
+
+    expect(report.unusableReasons).toEqual({
+      "claude failed: not logged in": 2,
+      "claude failed: bad key [redacted]": 1,
+    });
+  });
+
+  it("counts runs with no reported cost instead of pricing them at zero", () => {
+    const report = scoreSkill(corpus, [
+      {
+        prompt: "a",
+        expectation: "trigger",
+        runs: [
+          { invokedSkills: ["target"], usable: true, costUsd: 0.25 },
+          { invokedSkills: ["target"], usable: true },
+          { invokedSkills: ["target"], usable: true, costUsd: 0, cached: true },
+        ],
+      },
+    ]);
+
+    expect(report.totalCostUsd).toBe(0.25);
+    expect(report.unpricedRuns).toBe(1);
+    expect(report.cachedRuns).toBe(1);
+  });
 });

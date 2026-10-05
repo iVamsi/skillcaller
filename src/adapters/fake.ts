@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import type { RunOutcome } from "../metrics/types.js";
 import type { AgentAdapter, RunRequest } from "./types.js";
@@ -13,6 +14,11 @@ export class FakeAdapter implements AgentAdapter {
 
   static fromFile(path: string): FakeAdapter {
     return new FakeAdapter(JSON.parse(readFileSync(path, "utf8")) as Script);
+  }
+
+  /** A script edit changes the answers, so it must change the cache identity too. */
+  version(): Promise<string> {
+    return Promise.resolve(createHash("sha256").update(JSON.stringify(this.script)).digest("hex").slice(0, 16));
   }
 
   runPrompt(request: RunRequest): Promise<RunOutcome> {

@@ -10,6 +10,9 @@ const report = (skill: string, passed: boolean, failures: string[] = []): SkillR
   passed,
   failures,
   unusableRuns: 0,
+  unusableReasons: {},
+  cachedRuns: 0,
+  unpricedRuns: 0,
   totalCostUsd: 0,
   contamination: [],
 });

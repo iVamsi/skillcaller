@@ -10,5 +10,7 @@ export interface RunRequest {
 export interface AgentAdapter {
   readonly id: string;
   runPrompt(request: RunRequest): Promise<RunOutcome>;
+  /** Identifies the agent build behind the answers. Rejects when it cannot be read. */
+  version?(): Promise<string>;
   close?(): Promise<void>;
 }

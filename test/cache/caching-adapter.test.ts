@@ -29,6 +29,12 @@ function pack(descriptions: Record<string, string>): string {
 
 const cacheDir = () => mkdtempSync(join(tmpdir(), "skillcaller-cache-"));
 
+function sampleFiles(dir: string): string[] {
+  return readdirSync(dir, { recursive: true, encoding: "utf8" })
+    .filter((name) => name.endsWith(".json"))
+    .map((name) => join(dir, name));
+}
+
 describe("CachingAdapter", () => {
   it("reuses a cached result instead of paying for the same run twice", async () => {
     const { adapter, calls } = countingAdapter();
@@ -100,6 +106,7 @@ describe("CachingAdapter", () => {
     const cached = await new CachingAdapter(adapter, dir).runPrompt({ prompt: "p", packDir });
 
     expect(cached.costUsd).toBe(0);
+    expect(cached.cached).toBe(true);
     expect(cached.invokedSkills).toEqual(["alpha"]);
   });
 
@@ -115,27 +122,39 @@ describe("CachingAdapter", () => {
     expect(calls()).toBe(2);
   });
 
-  it("treats a hole in a cache file as a miss, not as a usable answer", async () => {
-    // A sparse array serialises as null; serving that back produced an outcome with no verdict
+  it("treats a null sample as a miss, not as a usable answer", async () => {
     const dir = cacheDir();
     const packDir = pack({ alpha: "does alpha" });
     const { adapter, calls } = countingAdapter();
-    const caching = new CachingAdapter(adapter, dir);
 
-    await caching.runPrompt({ prompt: "p", packDir });
-    const file = readdirSync(dir)[0] as string;
-    writeFileSync(join(dir, file), JSON.stringify({ outcomes: [null, { invokedSkills: ["alpha"], usable: true, costUsd: 0.02 }] }));
+    await new CachingAdapter(adapter, dir, { warn: () => undefined }).runPrompt({ prompt: "p", packDir });
+    for (const file of sampleFiles(dir)) writeFileSync(file, "null");
 
-    const fresh = new CachingAdapter(adapter, dir);
-    const outcome = await fresh.runPrompt({ prompt: "p", packDir });
+    const outcome = await new CachingAdapter(adapter, dir, { warn: () => undefined }).runPrompt({ prompt: "p", packDir });
 
     expect(outcome.usable).toBe(true);
     expect(outcome.invokedSkills).toEqual(["alpha"]);
     expect(calls()).toBe(2);
   });
 
+  it("treats valid JSON of the wrong shape as a miss with a warning instead of crashing", async () => {
+    const dir = cacheDir();
+    const packDir = pack({ alpha: "does alpha" });
+    const { adapter, calls } = countingAdapter();
+    await new CachingAdapter(adapter, dir).runPrompt({ prompt: "p", packDir });
+    for (const file of sampleFiles(dir)) {
+      writeFileSync(file, JSON.stringify({ invokedSkills: ["alpha"], usable: true, costUsd: "free" }));
+    }
+    const warnings: string[] = [];
+
+    const outcome = await new CachingAdapter(adapter, dir, { warn: (m) => warnings.push(m) }).runPrompt({ prompt: "p", packDir });
+
+    expect(outcome.cached).toBeUndefined();
+    expect(calls()).toBe(2);
+    expect(warnings).toHaveLength(1);
+  });
+
   it("keeps every answer when the same prompt is cached concurrently", async () => {
-    // Concurrent misses each wrote the file; the last write won and the other answers vanished
     const dir = cacheDir();
     const packDir = pack({ alpha: "does alpha" });
     let calls = 0;
@@ -151,11 +170,107 @@ describe("CachingAdapter", () => {
 
     await Promise.all([1, 2, 3, 4].map(() => caching.runPrompt({ prompt: "p", packDir })));
 
-    const file = readdirSync(dir)[0] as string;
-    const stored = JSON.parse(readFileSync(join(dir, file), "utf8")) as { outcomes: unknown[] };
+    const stored = sampleFiles(dir).map((file) => JSON.parse(readFileSync(file, "utf8")) as unknown);
     expect(calls).toBe(4);
-    expect(stored.outcomes).toHaveLength(4);
-    expect(stored.outcomes.every((entry) => entry !== null)).toBe(true);
+    expect(stored).toHaveLength(4);
+    expect(stored.every((entry) => entry !== null)).toBe(true);
+  });
+
+  it("does not let a second process overwrite samples another process already stored", async () => {
+    // Each process read-modify-wrote one shared file, so the slower one erased the other's samples
+    const dir = cacheDir();
+    const packDir = pack({ alpha: "does alpha" });
+    const { adapter } = countingAdapter();
+    const first = new CachingAdapter(adapter, dir);
+    const second = new CachingAdapter(adapter, dir);
+
+    await first.runPrompt({ prompt: "p", packDir });
+    await first.runPrompt({ prompt: "p", packDir });
+    await second.runPrompt({ prompt: "p", packDir });
+    await second.runPrompt({ prompt: "p", packDir });
+    await second.runPrompt({ prompt: "p", packDir });
+
+    expect(sampleFiles(dir)).toHaveLength(3);
+  });
+
+  it("returns the live answer when the cache cannot be written", async () => {
+    const blocked = join(cacheDir(), "file");
+    writeFileSync(blocked, "not a directory");
+    const { adapter } = countingAdapter();
+    const warnings: string[] = [];
+
+    const outcome = await new CachingAdapter(adapter, blocked, { warn: (m) => warnings.push(m) }).runPrompt({
+      prompt: "p",
+      packDir: pack({ alpha: "does alpha" }),
+    });
+
+    expect(outcome.invokedSkills).toEqual(["alpha"]);
+    expect(warnings).toHaveLength(1);
+  });
+
+  it("re-runs when a support file in a skill changes", async () => {
+    const { adapter, calls } = countingAdapter();
+    const dir = cacheDir();
+    const packDir = pack({ alpha: "does alpha" });
+    writeFileSync(join(packDir, "alpha", "reference.md"), "v1");
+    await new CachingAdapter(adapter, dir).runPrompt({ prompt: "p", packDir });
+
+    writeFileSync(join(packDir, "alpha", "reference.md"), "v2");
+    await new CachingAdapter(adapter, dir).runPrompt({ prompt: "p", packDir });
+
+    expect(calls()).toBe(2);
+  });
+
+  it("reuses samples when only the corpus changes, so new gates rescore old samples", async () => {
+    const { adapter, calls } = countingAdapter();
+    const dir = cacheDir();
+    const packDir = pack({ alpha: "does alpha" });
+    mkdirSync(join(packDir, "alpha", "evals"));
+    writeFileSync(join(packDir, "alpha", "evals", "triggers.yaml"), "gates: {trigger: 0.9}");
+    await new CachingAdapter(adapter, dir).runPrompt({ prompt: "p", packDir });
+
+    writeFileSync(join(packDir, "alpha", "evals", "triggers.yaml"), "gates: {trigger: 0.5}");
+    const outcome = await new CachingAdapter(adapter, dir).runPrompt({ prompt: "p", packDir });
+
+    expect(calls()).toBe(1);
+    expect(outcome.cached).toBe(true);
+  });
+
+  it("re-runs when the agent version changes", async () => {
+    const { adapter, calls } = countingAdapter();
+    const dir = cacheDir();
+    const packDir = pack({ alpha: "does alpha" });
+
+    await new CachingAdapter({ ...adapter, version: () => Promise.resolve("1.0.0") }, dir).runPrompt({ prompt: "p", packDir });
+    await new CachingAdapter({ ...adapter, version: () => Promise.resolve("1.0.1") }, dir).runPrompt({ prompt: "p", packDir });
+
+    expect(calls()).toBe(2);
+  });
+
+  it("turns caching off when the agent version cannot be read", async () => {
+    // Without a version, an upgraded CLI would be served answers recorded by the old one
+    const { adapter, calls } = countingAdapter();
+    const dir = cacheDir();
+    const packDir = pack({ alpha: "does alpha" });
+    const unknown = { ...adapter, version: () => Promise.reject(new Error("no --version")) };
+    const warnings: string[] = [];
+
+    await new CachingAdapter(unknown, dir, { warn: (m) => warnings.push(m) }).runPrompt({ prompt: "p", packDir });
+    await new CachingAdapter(unknown, dir, { warn: (m) => warnings.push(m) }).runPrompt({ prompt: "p", packDir });
+
+    expect(calls()).toBe(2);
+    expect(warnings).toHaveLength(2);
+  });
+
+  it("re-runs when the timeout changes", async () => {
+    const { adapter, calls } = countingAdapter();
+    const dir = cacheDir();
+    const packDir = pack({ alpha: "does alpha" });
+
+    await new CachingAdapter(adapter, dir).runPrompt({ prompt: "p", packDir, timeoutMs: 1000 });
+    await new CachingAdapter(adapter, dir).runPrompt({ prompt: "p", packDir, timeoutMs: 2000 });
+
+    expect(calls()).toBe(2);
   });
 
   it("varies runs of the same prompt instead of replaying one answer", async () => {

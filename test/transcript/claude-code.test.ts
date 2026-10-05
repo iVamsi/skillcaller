@@ -34,6 +34,12 @@ describe("parseClaudeCodeTranscript", () => {
     expect(parseClaudeCodeTranscript(fixture("invoked.ndjson")).costUsd).toBeGreaterThan(0);
   });
 
+  it("leaves cost unreported when the result event carries none", () => {
+    const transcript = JSON.stringify({ type: "result", subtype: "success", is_error: false });
+
+    expect(parseClaudeCodeTranscript(transcript).costUsd).toBeUndefined();
+  });
+
   it("records every distinct skill once, in invocation order", () => {
     const ndjson = [
       JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", name: "Skill", input: { skill: "b" } }] } }),
@@ -106,7 +112,7 @@ describe("parseClaudeCodeTranscript", () => {
           {
             invokedSkills: parsed.invokedSkills,
             usable: parsed.usable,
-            costUsd: parsed.costUsd,
+            ...(parsed.costUsd === undefined ? {} : { costUsd: parsed.costUsd }),
             ...(parsed.unusableReason === undefined ? {} : { unusableReason: parsed.unusableReason }),
           },
         ],

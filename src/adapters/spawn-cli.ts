@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { tmpdir } from "node:os";
 import type { RunOutcome } from "../metrics/types.js";
 
 const MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
@@ -49,6 +50,19 @@ export function spawnCli(
   });
 }
 
+const VERSION_TIMEOUT_MS = 15_000;
+
+/** `<binary> --version`, trimmed. Rejects on failure so callers never key a cache on a guess. */
+export async function cliVersion(binary: string): Promise<string> {
+  const result = await spawnCli(binary, ["--version"], tmpdir(), VERSION_TIMEOUT_MS);
+  const version = result.stdout.trim();
+  if (result.code !== 0 || version === "") {
+    const detail = result.stderr.trim().slice(0, 300) || (result.timedOut ? "timed out" : `exit code ${result.code}`);
+    throw new Error(`${binary} --version failed: ${detail}`);
+  }
+  return version;
+}
+
 export function unusable(reason: string): RunOutcome {
-  return { invokedSkills: [], usable: false, unusableReason: reason, costUsd: 0 };
+  return { invokedSkills: [], usable: false, unusableReason: reason };
 }

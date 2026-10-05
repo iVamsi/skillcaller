@@ -4,7 +4,10 @@ export interface RunOutcome {
   readonly foreignSkills?: readonly string[];
   readonly usable: boolean;
   readonly unusableReason?: string;
-  readonly costUsd: number;
+  /** Undefined when the agent does not report cost. */
+  readonly costUsd?: number;
+  /** Served from the cache rather than run during this invocation. */
+  readonly cached?: true;
 }
 
 export type Expectation = "trigger" | "no-trigger";
@@ -36,6 +39,12 @@ export interface SkillReport {
   readonly passed: boolean;
   readonly failures: readonly string[];
   readonly unusableRuns: number;
+  /** Redacted unusable reasons, by run count. */
+  readonly unusableReasons: Readonly<Record<string, number>>;
+  readonly cachedRuns: number;
+  /** Fresh runs whose agent reported no cost; they are missing from totalCostUsd. */
+  readonly unpricedRuns: number;
+  /** Spent during this invocation; cached runs cost nothing. */
   readonly totalCostUsd: number;
   /** Foreign skills seen during this skill's runs, deduplicated. */
   readonly contamination: readonly string[];

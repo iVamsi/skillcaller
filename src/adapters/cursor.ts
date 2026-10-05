@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { RunOutcome } from "../metrics/types.js";
 import { parseCursorTranscript } from "../transcript/cursor.js";
 import { installPack } from "./install-pack.js";
-import { spawnCli, unusable } from "./spawn-cli.js";
+import { cliVersion, spawnCli, unusable } from "./spawn-cli.js";
 import type { AgentAdapter, RunRequest } from "./types.js";
 
 const DEFAULT_TIMEOUT_MS = 180_000;
@@ -23,6 +23,10 @@ export class CursorAdapter implements AgentAdapter {
   readonly id = "cursor";
 
   constructor(private readonly options: CursorAdapterOptions = {}) {}
+
+  version(): Promise<string> {
+    return cliVersion(this.options.binary ?? "cursor-agent");
+  }
 
   async runPrompt(request: RunRequest): Promise<RunOutcome> {
     const workspace = realpathSync(mkdtempSync(join(tmpdir(), "skillcaller-cursor-ws-")));
@@ -62,7 +66,6 @@ export class CursorAdapter implements AgentAdapter {
         ...(transcript.foreignSkills.length === 0 ? {} : { foreignSkills: transcript.foreignSkills }),
         usable: transcript.usable,
         ...(transcript.unusableReason === undefined ? {} : { unusableReason: transcript.unusableReason }),
-        costUsd: 0,
       };
     } finally {
       rmSync(workspace, { recursive: true, force: true });

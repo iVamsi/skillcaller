@@ -83,7 +83,6 @@ export async function runPackCorpora(
           invokedSkills: [],
           usable: false,
           unusableReason: `adapter ${adapter.id} failed: ${(error as Error).message}`,
-          costUsd: 0,
         };
       }
 

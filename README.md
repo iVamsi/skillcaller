@@ -217,10 +217,26 @@ longer carries every installed skill's metadata. A 20-prompt corpus at 5 runs is
 Answers are cached, so iterating on one skill does not re-buy the rest. A measured example: a
 two-skill pack cost **$0.24** cold and **$0.00** warm, finishing in 3.8s instead of 14.7s.
 
-The cache key covers the **whole pack**, not one skill, because skills compete for a prompt and a
-rival's new description can change this skill's result. Editing any description re-runs what it
-affects. Unusable runs are never cached, since an auth failure is not a verdict. Disable it with
-`--no-cache`. A run prints the planned agent-call count to stderr before the first spawn.
+The cache key covers every staged file in the **whole pack**, not one skill, because skills compete
+for a prompt and a rival's edit can change this skill's result. It also covers the agent CLI's
+`--version`, the skillcaller version, the model, and the timeout. Editing a corpus does not re-run
+anything, so new gates rescore old answers. If the agent CLI cannot report a version, caching is off
+for that run. Unusable runs are never cached, since an auth failure is not a verdict. Each answer is
+its own file, so a malformed entry is a miss with a warning, and two runs sharing a cache do not
+erase each other's answers. Disable it with `--no-cache`. A run prints the planned agent-call count
+to stderr before the first spawn.
+
+The pack is copied once before the first agent call, and every run stages from that copy, so editing
+the pack mid-run does not change what is measured.
+
+### JSON report
+
+`--format json` prints `schemaVersion: 2` and a `run` object with the skillcaller version, agent,
+agent version, model, and a digest of the staged pack. The schema 1 fields keep their names and
+meaning. Each skill also reports `cachedRuns`, `unusableReasons` (secrets masked), and
+`unpricedRuns`, the runs whose agent reported no cost. `totalCostUsd` is what this invocation spent;
+Codex, Cursor and Antigravity report no cost, so their runs are counted in `unpricedRuns` instead of
+being priced at zero.
 
 ## Security
 

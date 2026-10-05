@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { RunOutcome } from "../metrics/types.js";
 import { parseCodexTranscript } from "../transcript/codex.js";
 import { installPack } from "./install-pack.js";
-import { spawnCli, unusable } from "./spawn-cli.js";
+import { cliVersion, spawnCli, unusable } from "./spawn-cli.js";
 import type { AgentAdapter, RunRequest } from "./types.js";
 
 const DEFAULT_TIMEOUT_MS = 180_000;
@@ -22,6 +22,10 @@ export class CodexAdapter implements AgentAdapter {
   readonly id = "codex";
 
   constructor(private readonly options: CodexAdapterOptions = {}) {}
+
+  version(): Promise<string> {
+    return cliVersion(this.options.binary ?? "codex");
+  }
 
   async runPrompt(request: RunRequest): Promise<RunOutcome> {
     const workspace = realpathSync(mkdtempSync(join(tmpdir(), "skillcaller-codex-ws-")));
@@ -61,7 +65,6 @@ export class CodexAdapter implements AgentAdapter {
         ...(transcript.foreignSkills.length === 0 ? {} : { foreignSkills: transcript.foreignSkills }),
         usable: transcript.usable,
         ...(transcript.unusableReason === undefined ? {} : { unusableReason: transcript.unusableReason }),
-        costUsd: 0, // Codex does not report per-run cost in its JSONL output.
       };
     } finally {
       rmSync(workspace, { recursive: true, force: true });

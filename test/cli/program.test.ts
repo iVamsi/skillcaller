@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -266,6 +266,43 @@ describe("skillcaller run", () => {
     expect(report.passed).toBe(true);
     expect(stderr).toMatch(/beta/);
   });
+
+  it("refuses an unsafe pack before calling any agent, even one that stages nothing", async () => {
+    const { packDir, scriptFile } = pack({ "do alpha": [["alpha"]], "do nothing": [[]] });
+    symlinkSync(scriptFile, join(packDir, "alpha", "leak.json"));
+
+    await expect(run(["run", packDir, "--agent", "fake", "--script", scriptFile, "--no-cache"])).rejects.toThrow(
+      /refusing to stage alpha\/leak.json/,
+    );
+    expect(stderr).not.toMatch(/agent call/);
+  });
+
+  it("wraps the JSON report in a versioned envelope that names what was measured", async () => {
+    const { packDir, scriptFile } = pack({ "do alpha": [["alpha"]], "do nothing": [[]] });
+
+    await run(["run", packDir, "--agent", "fake", "--script", scriptFile, "--format", "json", "--no-cache"]);
+
+    const report = JSON.parse(stdout) as { schemaVersion: number; run: Record<string, unknown>; passed: boolean };
+    expect(report.schemaVersion).toBe(2);
+    expect(report.passed).toBe(true);
+    expect(report.run).toMatchObject({ agent: "fake", model: null });
+    expect(report.run.skillcaller).toMatch(/^\d+\.\d+\.\d+/);
+    expect(report.run.agentVersion).toMatch(/^[0-9a-f]{16}$/);
+    expect(report.run.packDigest).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("counts samples served from the cache separately from fresh ones", async () => {
+    const { packDir, scriptFile } = pack({ "do alpha": [["alpha"]], "do nothing": [[]] });
+    const cacheDir = mkdtempSync(join(tmpdir(), "skillcaller-cli-cache-"));
+    const args = ["run", packDir, "--agent", "fake", "--script", scriptFile, "--format", "json", "--cache-dir", cacheDir];
+
+    await run(args);
+    const cold = JSON.parse(stdout) as { skills: { cachedRuns: number }[] };
+    stdout = "";
+    await run(args);
+    const warm = JSON.parse(stdout) as { skills: { cachedRuns: number }[] };
+
+    expect(cold.skills[0]?.cachedRuns).toBe(0);
+    expect(warm.skills[0]?.cachedRuns).toBe(2);
+  });
 });
-
-
