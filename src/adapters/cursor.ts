@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { RunOutcome } from "../metrics/types.js";
 import { parseCursorTranscript } from "../transcript/cursor.js";
 import { installPack } from "./install-pack.js";
-import { cliVersion, spawnCli, unusable } from "./spawn-cli.js";
+import { cliVersion, spawnCli, spawnFailure, unusable } from "./spawn-cli.js";
 import type { AgentAdapter, RunRequest } from "./types.js";
 
 const DEFAULT_TIMEOUT_MS = 180_000;
@@ -45,15 +45,14 @@ export class CursorAdapter implements AgentAdapter {
       if (request.model !== undefined) args.push("--model", request.model);
       args.push(request.prompt);
 
-      const result = await spawnCli(
-        this.options.binary ?? "cursor-agent",
-        args,
-        workspace,
-        request.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-      );
-      if (result.timedOut) {
-        return unusable(`cursor timed out after ${request.timeoutMs ?? DEFAULT_TIMEOUT_MS}ms`);
-      }
+      const timeoutMs = request.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+      const result = await spawnCli(this.options.binary ?? "cursor-agent", args, {
+        cwd: workspace,
+        timeoutMs,
+        ...(request.signal === undefined ? {} : { signal: request.signal }),
+      });
+      const stopped = spawnFailure("cursor", result, timeoutMs);
+      if (stopped !== undefined) return stopped;
 
       const transcript = parseCursorTranscript(result.stdout, skillsDir);
       if (!transcript.usable && result.code !== 0) {

@@ -13,7 +13,7 @@ import { CachingAdapter } from "./cache/caching-adapter.js";
 import { positiveInt, rate } from "./cli-options.js";
 import { buildCollisionMatrix, type CollisionMatrix, type CorpusOutcomes } from "./metrics/collisions.js";
 import { scoreSkill } from "./metrics/score.js";
-import type { SkillReport } from "./metrics/types.js";
+import type { RunOutcome, SkillReport } from "./metrics/types.js";
 import { loadPack, type Pack } from "./pack/load-pack.js";
 import {
   renderJUnit,
@@ -71,11 +71,34 @@ interface RunFlags {
   readonly collisionThreshold: string;
   readonly cache: boolean;
   readonly cacheDir: string;
+  readonly maxCalls: string;
+  readonly deadline?: string;
+  readonly maxCost?: string;
 }
 
 const DEFAULT_MODEL = "claude-haiku-4-5-20251001";
 
 const FORMATS = ["terminal", "json", "markdown", "junit"] as const;
+
+/** Limits guard spend, so a typo must stop the run rather than fall back to no limit. */
+function limit(raw: string, label: string, integer: boolean): number {
+  const value = /^\d*\.?\d+$/.test(raw.trim()) ? Number(raw) : Number.NaN;
+  if (!(value > 0) || (integer && !Number.isInteger(value))) {
+    throw new Error(`${label} expects a ${integer ? "whole number" : "number"} above 0, got "${raw}"`);
+  }
+  return value;
+}
+
+/** Aborts the run once fresh spend reaches the budget. Cached answers cost nothing. */
+export function watchBudget(maxCostUsd: number, controller: AbortController): (outcome: RunOutcome) => void {
+  let spent = 0;
+  return (outcome) => {
+    spent += outcome.costUsd ?? 0;
+    if (spent >= maxCostUsd && !controller.signal.aborted) {
+      controller.abort(new Error(`spend reached the --max-cost budget of $${maxCostUsd.toFixed(2)}`));
+    }
+  };
+}
 
 function agentCallCount(pack: Pack): number {
   let total = 0;
@@ -101,6 +124,11 @@ async function runPack(packArg: string | undefined, flags: RunFlags): Promise<vo
     return;
   }
   const pack = loadPack(packDir);
+  const calls = agentCallCount(pack);
+  const maxCalls = limit(flags.maxCalls, "--max-calls", true);
+  if (calls > maxCalls) {
+    throw new Error(`${calls} agent calls exceeds --max-calls ${maxCalls}; raise it to run this pack`);
+  }
   // Agents stage from this copy, so edits to the source pack mid-run cannot change what is measured
   const snapshot = mkdtempSync(join(tmpdir(), "skillcaller-pack-"));
   try {
@@ -125,8 +153,39 @@ async function runPack(packArg: string | undefined, flags: RunFlags): Promise<vo
   }
 }
 
-async function measurePack(pack: Pack, adapter: AgentAdapter, flags: RunFlags, run: RunInfo): Promise<void> {
-  const model = run.model ?? undefined;
+async function measurePack(pack: Pack, adapter: AgentAdapter, flags: RunFlags, info: RunInfo): Promise<void> {
+  const model = info.model ?? undefined;
+  const controller = new AbortController();
+  const interrupt = (signal: NodeJS.Signals) => () => controller.abort(new Error(`interrupted by ${signal}`));
+  const onSigint = interrupt("SIGINT");
+  const onSigterm = interrupt("SIGTERM");
+  process.once("SIGINT", onSigint);
+  process.once("SIGTERM", onSigterm);
+  const deadlineMs = flags.deadline === undefined ? undefined : limit(flags.deadline, "--deadline", true);
+  const deadline =
+    deadlineMs === undefined
+      ? undefined
+      : setTimeout(() => controller.abort(new Error(`hit the --deadline of ${deadlineMs}ms`)), deadlineMs);
+  const onOutcome =
+    flags.maxCost === undefined ? undefined : watchBudget(limit(flags.maxCost, "--max-cost", false), controller);
+  try {
+    await measureUntilStopped(pack, adapter, flags, info, model, controller.signal, onOutcome);
+  } finally {
+    clearTimeout(deadline);
+    process.removeListener("SIGINT", onSigint);
+    process.removeListener("SIGTERM", onSigterm);
+  }
+}
+
+async function measureUntilStopped(
+  pack: Pack,
+  adapter: AgentAdapter,
+  flags: RunFlags,
+  info: RunInfo,
+  model: string | undefined,
+  signal: AbortSignal,
+  onOutcome: ((outcome: RunOutcome) => void) | undefined,
+): Promise<void> {
   const timeoutMs = flags.timeout === undefined ? undefined : positiveInt(flags.timeout, 180_000, "--timeout");
   const concurrency = positiveInt(flags.concurrency, 2, "--concurrency");
   const calls = agentCallCount(pack);
@@ -139,7 +198,7 @@ async function measurePack(pack: Pack, adapter: AgentAdapter, flags: RunFlags, r
   }
 
   if (pack.entries.length === 0) {
-    writeReport(flags.format, [], buildCollisionMatrix([]), pack.skillsWithoutCorpus, run);
+    writeReport(flags.format, [], buildCollisionMatrix([]), pack.skillsWithoutCorpus, info);
     process.exitCode = 1;
     return;
   }
@@ -153,6 +212,8 @@ async function measurePack(pack: Pack, adapter: AgentAdapter, flags: RunFlags, r
     ...(model === undefined ? {} : { model }),
     ...(timeoutMs === undefined ? {} : { timeoutMs }),
     concurrency,
+    signal,
+    ...(onOutcome === undefined ? {} : { onOutcome }),
     onProgress: (completed, total) => {
       if (flags.format === "terminal" && process.stderr.isTTY === true) {
         process.stderr.write(`\rprogress: ${completed}/${total} runs`);
@@ -182,8 +243,13 @@ async function measurePack(pack: Pack, adapter: AgentAdapter, flags: RunFlags, r
     threshold: rate(flags.collisionThreshold, 0.2, "--collision-threshold"),
   });
 
+  const stoppedEarly = signal.aborted ? (signal.reason as Error).message : undefined;
+  if (stoppedEarly !== undefined) {
+    process.stderr.write(`skillcaller: stopped early (${stoppedEarly}); unfinished prompts were not measured\n`);
+  }
+  const run: RunInfo = stoppedEarly === undefined ? info : { ...info, stoppedEarly };
   writeReport(flags.format, reports, matrix, pack.skillsWithoutCorpus, run);
-  process.exitCode = runPassed(reports, matrix) ? 0 : 1;
+  process.exitCode = stoppedEarly === undefined && runPassed(reports, matrix) ? 0 : 1;
 }
 
 function writeReport(
@@ -200,7 +266,10 @@ function writeReport(
         ? renderMarkdown(reports, matrix, skippedSkills)
         : format === "junit"
           ? renderJUnit(reports, matrix, skippedSkills)
-          : renderTerminal(reports, matrix, { skippedSkills });
+          : renderTerminal(reports, matrix, {
+              skippedSkills,
+              ...(run.stoppedEarly === undefined ? {} : { stoppedEarly: run.stoppedEarly }),
+            });
   process.stdout.write(`${output}\n`);
 }
 
@@ -227,6 +296,9 @@ export function createProgram(): Command {
     )
     .option("--no-cache", "re-run every prompt instead of reusing cached answers")
     .option("--cache-dir <dir>", "where cached answers live", ".skillcaller-cache")
+    .option("--max-calls <n>", "refuse to start a run needing more agent calls than this", "1000")
+    .option("--deadline <ms>", "stop the whole run after this many milliseconds")
+    .option("--max-cost <usd>", "stop the run once fresh spend reaches this many dollars")
     .description("Measure how reliably each skill triggers")
     .action(runPack);
 

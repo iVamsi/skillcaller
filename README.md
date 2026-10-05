@@ -165,6 +165,13 @@ answered every usable trigger run.
 | `--no-cache` | Re-run every prompt instead of reusing cached answers | `false` |
 | `--cache-dir <dir>` | Directory where cached answers live | `.skillcaller-cache` |
 | `--script <file>` | Path to scripted responses for the `fake` agent | (none) |
+| `--max-calls <n>` | Refuse to start a run that needs more agent calls than this | `1000` |
+| `--deadline <ms>` | Stop the whole run after this many milliseconds | (none) |
+| `--max-cost <usd>` | Stop the run once this invocation has spent this many dollars. Agents that report no cost never reach it | (none) |
+
+A run stopped by `--deadline`, `--max-cost`, or Ctrl-C kills the running agents, marks the report
+as stopped early (`run.stoppedEarly` in JSON), and exits 1. A prompt is measured only when at least
+half of its runs were usable, so one good run among four failures cannot produce a 100% rate.
 
 ## CI Integration (GitHub Actions)
 
@@ -240,8 +247,10 @@ being priced at zero.
 
 ## Security
 
-Skill bodies are untrusted text. Tools are disallowed, turns are capped at one, workspaces are
-disposable, and approval-bypass flags are never used. See [SECURITY.md](SECURITY.md).
+Skill bodies are untrusted text. Each agent runs with its CLI's read-only or tool-blocking mode in
+a disposable workspace, and approval-bypass flags are never used. The limits differ by agent: only
+Claude Code is capped at one turn, and no agent's network is restricted. See
+[SECURITY.md](SECURITY.md) for what each agent is allowed to do.
 
 ## Contributing
 

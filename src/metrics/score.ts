@@ -12,6 +12,11 @@ function redact(reason: string): string {
   return reason.replace(/[A-Za-z0-9_-]{24,}/g, "[redacted]").slice(0, MAX_REASON_LENGTH);
 }
 
+/** A rate from a minority of the attempted runs says more about the failures than the skill. */
+function minimumUsableRuns(attempted: number): number {
+  return Math.ceil(attempted / 2);
+}
+
 function scorePrompt(skill: string, outcome: PromptOutcome): PromptReport {
   const usable = outcome.runs.filter((run) => run.usable);
   const hits = usable.filter((run) => run.invokedSkills.includes(skill)).length;
@@ -27,7 +32,10 @@ function scorePrompt(skill: string, outcome: PromptOutcome): PromptReport {
   return {
     prompt: outcome.prompt,
     expectation: outcome.expectation,
-    rate: usable.length === 0 ? undefined : hits / usable.length,
+    rate:
+      usable.length === 0 || usable.length < minimumUsableRuns(outcome.runs.length)
+        ? undefined
+        : hits / usable.length,
     usableRuns: usable.length,
     totalRuns: outcome.runs.length,
     otherSkills,
@@ -58,7 +66,12 @@ export function scoreSkill(corpus: Corpus, outcomes: readonly PromptOutcome[]): 
 
   const unmeasured = prompts.filter((report) => report.rate === undefined);
   for (const report of unmeasured) {
-    failures.push(`"${report.prompt}" had no usable runs, so it was never measured`);
+    failures.push(
+      report.usableRuns === 0
+        ? `"${report.prompt}" had no usable runs, so it was never measured`
+        : `"${report.prompt}" was not measured: ${report.usableRuns} of ${report.totalRuns} runs were usable; ` +
+            `at least ${minimumUsableRuns(report.totalRuns)} are needed`,
+    );
   }
 
   if (triggerRate !== undefined && triggerRate < corpus.gates.trigger) {

@@ -3,6 +3,8 @@ import { lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "
 import { join, relative, resolve } from "node:path";
 
 const EXCLUDED = new Set(["evals"]);
+const MAX_PACK_FILES = 1000;
+const MAX_PACK_BYTES = 10 * 1024 * 1024;
 
 /**
  * Copy skill dirs only; skip evals (the corpus) and anything without SKILL.md.
@@ -25,7 +27,16 @@ export function packDigest(packDir: string): string {
 function walkPack(packDir: string, visit: (rel: string, content: Buffer) => void): string {
   const root = resolve(packDir);
   const hash = createHash("sha256");
+  let files = 0;
+  let bytes = 0;
   const emit = (rel: string, content: Buffer): void => {
+    files += 1;
+    bytes += content.length;
+    // Checked while walking, so an oversized pack is refused before an agent is paid to read it
+    if (files > MAX_PACK_FILES) throw new Error(`refusing to stage ${packDir}: more than ${MAX_PACK_FILES} files`);
+    if (bytes > MAX_PACK_BYTES) {
+      throw new Error(`refusing to stage ${packDir}: larger than ${MAX_PACK_BYTES / 1024 / 1024} MB`);
+    }
     // Line endings do not change what the agent reads
     hash.update(rel).update("\0").update(content.toString("utf8").replace(/\r\n/g, "\n")).update("\0");
     visit(rel, content);

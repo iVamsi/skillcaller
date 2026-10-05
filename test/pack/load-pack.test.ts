@@ -87,4 +87,10 @@ describe("loadPack", () => {
       chmodSync(corpusFile, 0o644);
     }
   });
+
+  it("refuses an oversized corpus before parsing it", () => {
+    const dir = pack({ alpha: { corpus: `skill: alpha\nshould_trigger: ["${"x".repeat(1024 * 1024)}"]\n` } });
+
+    expect(() => loadPack(dir)).toThrow(/alpha.*larger than 1 MB/);
+  });
 });

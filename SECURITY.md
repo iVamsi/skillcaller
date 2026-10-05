@@ -9,53 +9,67 @@ vulnerability.
 ## What skillcaller does with untrusted input
 
 A skill is Markdown written by someone else. skillcaller reads skills, hands them to an agent, and
-watches which one the agent reaches for. The skill body is prompt-injection surface, so the
-harness is built so that a skill's instructions cannot act:
+watches which one the agent reaches for. The skill body is prompt-injection surface. skillcaller
+limits what an agent may do while it decides, but the limits differ by agent, and the agent CLI
+enforces them, not skillcaller. Treat a pack you did not write as you would any untrusted input.
 
-- **Tools are refused.** Claude Code runs with every tool except `Skill` on the disallowed list, so
-  a skill body cannot make the agent read, write, or execute anything. Codex runs with
-  `--sandbox read-only`. Cursor runs with `--mode ask` (read-only mode). Antigravity CLI runs with
-  `--sandbox`; workspace file reads are auto-allowed and shell stays Ask unless you pass
-  `--dangerously-skip-permissions`, which is never passed.
+### What each agent is allowed to do
 
-  This is a denylist by necessity. `--allowed-tools` only auto-approves; tested against the real
-  CLI, a prompt demanding Bash still invoked it when `--allowed-tools Skill` was the only
-  restriction. `--disallowed-tools` does block execution, and the CLI answers such a call with
-  "Bash is disabled for this session, in subagents as well as here". A tool absent from the list
-  still runs, so the list covers the whole known surface, including delegation (`Task`, `Agent`,
-  `ToolSearch`) and anything outward-facing (`Artifact`, `SendMessage`, `CronCreate`).
+| | Claude Code | Codex | Cursor | Antigravity |
+| --- | --- | --- | --- | --- |
+| Tool limit | Every tool except `Skill` is on `--disallowed-tools` (verified live) | `--sandbox read-only` (flag passed; not verified by skillcaller) | `--mode ask`, read-only (flag passed; not verified by skillcaller) | `--sandbox`; shell stays Ask (flag passed; not verified by skillcaller) |
+| Turn limit | `--max-turns 1` | None | None | None |
+| Your own skills | Hidden by `--setting-sources project` (verified live) | Visible; reads are reported as contamination | Visible; reads are reported as contamination | Visible; reads are reported as contamination |
+| Filesystem | Fresh temp workspace, deleted after the run | Fresh temp workspace, deleted after the run | Fresh temp workspace, deleted after the run | Fresh temp workspace; the pack is a plugin under `~/.gemini/config/plugins` |
+| Network | Not restricted by skillcaller; `WebFetch` and `WebSearch` are disallowed | Not restricted by skillcaller | Not restricted by skillcaller | Not restricted by skillcaller |
+| Environment and credentials | Inherits yours | Inherits yours | Inherits yours | Inherits yours |
 
-  Verified end to end: a skill whose body instructs the agent to `touch` a file triggers, and no
-  file is created.
-- **One turn only.** `--max-turns 1` stops the run at the point the decision is observable. A skill
-  never gets a second turn to act on its own instructions.
-- **Disposable workspaces.** Each run happens in a fresh temp directory that is deleted afterwards.
-  Your repository is never the working directory.
-- **No approval bypass.** `--dangerously-skip-permissions` and
-  `--dangerously-bypass-approvals-and-sandbox` are never passed, and tests assert their absence.
+A temp workspace is not a filesystem boundary. An agent that can read files can read outside it,
+which is why the tool limit matters more than the workspace.
 
-## Isolation from your own skills
+Claude Code's tool limit is a denylist by necessity. `--allowed-tools` only auto-approves; tested
+against the real CLI, a prompt demanding Bash still invoked it when `--allowed-tools Skill` was the
+only restriction. `--disallowed-tools` does block execution, and the CLI answers such a call with
+"Bash is disabled for this session, in subagents as well as here". A tool absent from the list
+still runs, so the list covers the whole known surface, including delegation (`Task`, `Agent`,
+`ToolSearch`) and anything outward-facing (`Artifact`, `SendMessage`, `CronCreate`). Verified end
+to end: a skill whose body instructs the agent to `touch` a file triggers, and no file is created.
+A new CLI release can add tools, so this holds for the versions tested, not every version.
+
+`--dangerously-skip-permissions` and `--dangerously-bypass-approvals-and-sandbox` are never
+passed, and tests assert their absence.
+
+### Isolation from your own skills
 
 A personal skill can answer a prompt meant for the pack under test and silently corrupt a
-measurement. Claude Code runs with `--setting-sources project`, which was verified to stop a
-personal plugin skill from answering. Codex, Cursor, and Antigravity CLI read skills from your home
-directory and offer no override that keeps authentication working, so those reads are surfaced as
-contamination: they are never counted as hits, they appear in every report format, and they fail
-the skill rather than letting a contaminated run look clean.
-
-Antigravity CLI ignores workspace `.agents/skills`. A pack run installs the pack once as a uniquely named
-plugin under `~/.gemini/config/plugins` and uninstalls it when the run finishes. A killed process can leave a
-plugin whose name starts with `sc`; remove it with `agy plugin uninstall`.
+measurement. Codex, Cursor, and Antigravity CLI read skills from your home directory and offer no
+override that keeps authentication working, so those reads are reported as contamination. They are
+never counted as hits, they appear in every report format, and they fail the skill.
 
 The corpus never travels with the pack. `evals/triggers.yaml` lists the prompts that are supposed
 to trigger a skill, and Codex can read files even under `--sandbox read-only`, so installing it
 alongside `SKILL.md` would hand the agent the answer key to its own exam.
 
+### Processes and cleanup
+
+Each agent runs in its own process group. On timeout, `--deadline`, `--max-cost`, Ctrl-C, or a
+normal exit, skillcaller kills the whole group, so a process the agent started cannot outlive the
+run. Process groups are POSIX only; on Windows only the agent process itself is killed, and Windows
+is not a supported platform.
+
+Antigravity CLI ignores workspace `.agents/skills`, so a run installs the pack as a uniquely named
+plugin. skillcaller records the plugin name in a temp-directory journal before installing, and
+deletes the record only after `agy plugin uninstall` succeeds. If the uninstall fails, the run fails
+and prints the exact command to run. If skillcaller is killed before it can clean up, the next
+Antigravity run removes plugins whose recorded owner process has exited, by their exact recorded
+name.
+
 ## Credentials
 
 skillcaller never reads, stores, or logs credentials. It runs the agent CLIs you have already
-authenticated and inherits their environment. Reports contain prompts and skill names, never
-transcript bodies.
+authenticated, and those CLIs inherit your environment. Reports contain your prompts, skill names,
+and short failure reasons with token-like strings masked, never transcript bodies. Treat a report
+as you would the corpus it came from.
 
 ## Supply chain
 

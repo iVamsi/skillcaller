@@ -192,4 +192,33 @@ describe("scoreSkill contamination", () => {
     expect(report.unpricedRuns).toBe(1);
     expect(report.cachedRuns).toBe(1);
   });
+
+  it("does not measure a prompt from a minority of usable runs", () => {
+    // One usable run out of five produced a confident 100% rate
+    const unusable = { invokedSkills: [], usable: false, unusableReason: "timed out" };
+    const report = scoreSkill({ ...corpus, runs: 5 }, [
+      {
+        prompt: "a",
+        expectation: "trigger",
+        runs: [{ invokedSkills: ["target"], usable: true }, unusable, unusable, unusable, unusable],
+      },
+    ]);
+
+    expect(report.prompts[0]?.rate).toBeUndefined();
+    expect(report.passed).toBe(false);
+    expect(report.failures.join()).toMatch(/1 of 5 runs were usable; at least 3 are needed/);
+  });
+
+  it("measures a prompt once a majority of runs are usable", () => {
+    const unusable = { invokedSkills: [], usable: false, unusableReason: "timed out" };
+    const report = scoreSkill({ ...corpus, runs: 5 }, [
+      {
+        prompt: "a",
+        expectation: "trigger",
+        runs: [...Array.from({ length: 3 }, () => ({ invokedSkills: ["target"], usable: true })), unusable, unusable],
+      },
+    ]);
+
+    expect(report.prompts[0]?.rate).toBe(1);
+  });
 });

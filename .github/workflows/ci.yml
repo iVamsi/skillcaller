@@ -33,4 +33,25 @@ jobs:
           test "$exit_code" = "1" || { echo "expected exit 1 from the demo pack, got $exit_code"; exit 1; }
           grep -q "writing-compose-ui" report.md || { echo "report is missing the failing skill"; exit 1; }
           grep -qi "collision" report.md || { echo "report is missing the collision section"; exit 1; }
+      # Ctrl-C can only be tested against the built CLI; a stand-in claude hangs with a grandchild
+      - name: Interrupt stops the run and its agents
+        run: |
+          bin="$RUNNER_TEMP/hang-bin"
+          mkdir -p "$bin"
+          cat > "$bin/claude" <<'STUB'
+          #!/usr/bin/env node
+          if (process.argv.includes("--version")) { console.log("1.0.0"); process.exit(0); }
+          require("node:child_process").spawn(process.execPath, ["-e", "setTimeout(()=>{},60000) /* skillcaller-hang */"], { stdio: "inherit" });
+          setTimeout(() => {}, 60000);
+          STUB
+          chmod +x "$bin/claude"
+          PATH="$bin:$PATH" node dist/cli.js run examples/mini-pack --agent claude-code --no-cache --format json > interrupted.json &
+          pid=$!
+          sleep 3
+          kill -INT "$pid"
+          wait "$pid" && exit_code=0 || exit_code=$?
+          test "$exit_code" = "1" || { echo "expected exit 1 after SIGINT, got $exit_code"; exit 1; }
+          grep -q '"stoppedEarly": "interrupted by SIGINT"' interrupted.json || { echo "report does not say it was interrupted"; exit 1; }
+          sleep 1
+          if pgrep -f skillcaller-hang; then echo "agent processes outlived the run"; exit 1; fi
       - run: npm audit --audit-level=moderate

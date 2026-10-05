@@ -21,7 +21,7 @@ export interface PromptOutcome {
 export interface PromptReport {
   readonly prompt: string;
   readonly expectation: Expectation;
-  /** Undefined when no run was usable. */
+  /** Undefined when fewer than half the attempted runs were usable. */
   readonly rate: number | undefined;
   readonly usableRuns: number;
   readonly totalRuns: number;

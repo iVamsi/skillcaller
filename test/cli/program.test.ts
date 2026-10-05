@@ -1,8 +1,8 @@
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createProgram } from "../../src/program.js";
+import { createProgram, watchBudget } from "../../src/program.js";
 import { loadPack } from "../../src/pack/load-pack.js";
 
 let stdout: string;
@@ -304,5 +304,53 @@ describe("skillcaller run", () => {
 
     expect(cold.skills[0]?.cachedRuns).toBe(0);
     expect(warm.skills[0]?.cachedRuns).toBe(2);
+  });
+
+  it("refuses a run with more agent calls than --max-calls before calling any agent", async () => {
+    const { packDir, scriptFile } = pack({ "do alpha": [["alpha"]], "do nothing": [[]] });
+
+    await expect(
+      run(["run", packDir, "--agent", "fake", "--script", scriptFile, "--no-cache", "--max-calls", "1"]),
+    ).rejects.toThrow(/2 agent calls exceeds --max-calls 1/);
+  });
+
+  it("stops at the deadline, kills the agent, and reports the run as incomplete", async () => {
+    // A stand-in claude that answers --version and then hangs on every prompt
+    const bin = mkdtempSync(join(tmpdir(), "skillcaller-hang-"));
+    writeFileSync(
+      join(bin, "claude"),
+      `#!/usr/bin/env node\nif (process.argv.includes("--version")) { console.log("1.0.0"); process.exit(0); }\nsetTimeout(() => {}, 60000);\n`,
+    );
+    chmodSync(join(bin, "claude"), 0o755);
+    vi.stubEnv("PATH", `${bin}:${process.env.PATH ?? ""}`);
+    const { packDir } = pack({});
+    const started = Date.now();
+
+    try {
+      await run(["run", packDir, "--agent", "claude-code", "--no-cache", "--format", "json", "--deadline", "300"]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+
+    const report = JSON.parse(stdout) as { passed: boolean; run: { stoppedEarly?: string } };
+    expect(Date.now() - started).toBeLessThan(10_000);
+    expect(report.passed).toBe(false);
+    expect(report.run.stoppedEarly).toMatch(/deadline/);
+    expect(stderr).toMatch(/stopped early/);
+    expect(process.exitCode).toBe(1);
+  });
+});
+
+describe("watchBudget", () => {
+  it("stops the run once fresh spend reaches the budget", () => {
+    const controller = new AbortController();
+    const onOutcome = watchBudget(0.1, controller);
+
+    onOutcome({ invokedSkills: [], usable: true, costUsd: 0.06 });
+    expect(controller.signal.aborted).toBe(false);
+    onOutcome({ invokedSkills: [], usable: true, costUsd: 0.05 });
+
+    expect(controller.signal.aborted).toBe(true);
+    expect(String(controller.signal.reason)).toMatch(/budget/);
   });
 });

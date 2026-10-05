@@ -9,6 +9,9 @@ export interface RunPackOptions {
   readonly timeoutMs?: number;
   readonly onProgress?: (completed: number, total: number, skill: string) => void;
   readonly onSkillComplete?: (skill: string) => void;
+  readonly onOutcome?: (outcome: RunOutcome) => void;
+  /** Once aborted, no new run starts and running agents are stopped. */
+  readonly signal?: AbortSignal;
 }
 
 interface PackJob {
@@ -68,7 +71,7 @@ export async function runPackCorpora(
       const index = next;
       next += 1;
       const job = jobs[index];
-      if (job === undefined) return;
+      if (job === undefined || options.signal?.aborted === true) return;
 
       let outcome: RunOutcome;
       try {
@@ -77,6 +80,7 @@ export async function runPackCorpora(
           packDir: options.packDir,
           ...(options.model === undefined ? {} : { model: options.model }),
           ...(job.timeoutMs === undefined ? {} : { timeoutMs: job.timeoutMs }),
+          ...(options.signal === undefined ? {} : { signal: options.signal }),
         });
       } catch (error) {
         outcome = {
@@ -87,6 +91,7 @@ export async function runPackCorpora(
       }
 
       results[job.entryIndex]?.[job.promptIndex]?.push(outcome);
+      options.onOutcome?.(outcome);
       completed += 1;
       options.onProgress?.(completed, total, job.skill);
 

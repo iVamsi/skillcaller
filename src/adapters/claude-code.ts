@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { RunOutcome } from "../metrics/types.js";
 import { parseClaudeCodeTranscript } from "../transcript/claude-code.js";
 import { installPack } from "./install-pack.js";
-import { cliVersion, spawnCli, unusable } from "./spawn-cli.js";
+import { cliVersion, spawnCli, spawnFailure, unusable } from "./spawn-cli.js";
 import type { AgentAdapter, RunRequest } from "./types.js";
 
 /**
@@ -64,17 +64,15 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       if (request.model !== undefined) args.push("--model", request.model);
 
       configDir = this.options.isolateConfigDir === true ? mkdtempSync(join(tmpdir(), "skillcaller-cfg-")) : undefined;
-      const result = await spawnCli(
-        this.options.binary ?? "claude",
-        args,
-        workspace,
-        request.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-        configDir === undefined ? process.env : { ...process.env, CLAUDE_CONFIG_DIR: configDir },
-      );
-
-      if (result.timedOut) {
-        return unusable(`claude timed out after ${request.timeoutMs ?? DEFAULT_TIMEOUT_MS}ms`);
-      }
+      const timeoutMs = request.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+      const result = await spawnCli(this.options.binary ?? "claude", args, {
+        cwd: workspace,
+        timeoutMs,
+        env: configDir === undefined ? process.env : { ...process.env, CLAUDE_CONFIG_DIR: configDir },
+        ...(request.signal === undefined ? {} : { signal: request.signal }),
+      });
+      const stopped = spawnFailure("claude", result, timeoutMs);
+      if (stopped !== undefined) return stopped;
 
       const transcript = parseClaudeCodeTranscript(result.stdout);
       // --max-turns 1 exits non-zero even when the Skill call was observed

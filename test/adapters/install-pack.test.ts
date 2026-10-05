@@ -105,4 +105,18 @@ describe("installPack", () => {
 
     expect(() => installPack(packDir, dest)).toThrow(/SKILL.md: symlink/);
   });
+
+  it("refuses a pack too large to be a set of skills", () => {
+    const { packDir, dest } = pack();
+    writeFileSync(join(packDir, "alpha", "huge.bin"), Buffer.alloc(11 * 1024 * 1024));
+
+    expect(() => installPack(packDir, dest)).toThrow(/larger than/);
+  });
+
+  it("refuses a pack with too many files", () => {
+    const { packDir, dest } = pack();
+    for (let i = 0; i < 1001; i++) writeFileSync(join(packDir, "alpha", `f${i}.md`), "");
+
+    expect(() => installPack(packDir, dest)).toThrow(/more than 1000 files/);
+  });
 });

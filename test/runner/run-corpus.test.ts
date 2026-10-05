@@ -192,5 +192,35 @@ describe("runPackCorpora", () => {
     expect(completedSkills).toContain("skill-a");
     expect(completedSkills).toContain("skill-b");
   });
-});
 
+  it("stops dispatching new runs once the signal aborts", async () => {
+    const controller = new AbortController();
+    let calls = 0;
+    const outcomes = await runOne(corpus, adapterOf(() => {
+      calls += 1;
+      controller.abort();
+      return hit;
+    }), { packDir: "/pack", concurrency: 1, signal: controller.signal });
+
+    expect(calls).toBe(1);
+    expect(outcomes.flatMap((outcome) => outcome.runs)).toHaveLength(1);
+  });
+
+  it("hands the signal to the adapter so a running agent can be stopped", async () => {
+    const controller = new AbortController();
+    const signals: (AbortSignal | undefined)[] = [];
+    await runOne(corpus, adapterOf((request) => {
+      signals.push(request.signal);
+      return hit;
+    }), { packDir: "/pack", signal: controller.signal });
+
+    expect(signals.every((signal) => signal === controller.signal)).toBe(true);
+  });
+
+  it("reports each outcome as it arrives, so spend can be tracked mid-run", async () => {
+    const seen: RunOutcome[] = [];
+    await runOne(corpus, adapterOf(() => hit), { packDir: "/pack", onOutcome: (outcome) => seen.push(outcome) });
+
+    expect(seen).toHaveLength(9);
+  });
+});

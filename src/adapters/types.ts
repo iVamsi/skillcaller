@@ -5,6 +5,8 @@ export interface RunRequest {
   readonly packDir: string;
   readonly model?: string;
   readonly timeoutMs?: number;
+  /** Aborted when the run is interrupted or exceeds its deadline or budget. */
+  readonly signal?: AbortSignal;
 }
 
 export interface AgentAdapter {

@@ -3,6 +3,8 @@ import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { parseCorpus, type Corpus } from "../corpus/schema.js";
 
+const MAX_CORPUS_BYTES = 1024 * 1024;
+
 export interface PackEntry {
   readonly directory: string;
   readonly description: string;
@@ -45,6 +47,9 @@ export function loadPack(root: string): Pack {
     const corpusFile = join(directory, "evals", "triggers.yaml");
     let corpusText: string;
     try {
+      if (statSync(corpusFile).size > MAX_CORPUS_BYTES) {
+        throw new Error("it is larger than 1 MB");
+      }
       corpusText = readFileSync(corpusFile, "utf8");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {

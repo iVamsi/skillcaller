@@ -11,6 +11,8 @@ export interface RunInfo {
   /** Null when the agent picks its own default. */
   readonly model: string | null;
   readonly packDigest: string;
+  /** Why the run stopped before every agent call finished. */
+  readonly stoppedEarly?: string;
 }
 
 export const REPORT_SCHEMA_VERSION = 2;
@@ -18,6 +20,7 @@ export const REPORT_SCHEMA_VERSION = 2;
 export interface RenderOptions {
   readonly color?: boolean;
   readonly skippedSkills?: readonly string[];
+  readonly stoppedEarly?: string;
 }
 
 const percent = (rate: number | undefined): string =>
@@ -79,6 +82,9 @@ export function renderTerminal(
   const failed = reports.filter((report) => !report.passed).length;
   const collisions = matrix?.collisions.length ?? 0;
   lines.push("");
+  if (options.stoppedEarly !== undefined) {
+    lines.push(red(`Run stopped early: ${options.stoppedEarly}. Unfinished prompts were not measured.`));
+  }
   if (reports.length === 0) {
     lines.push(red("No skills were measured."));
   } else if (failed === 0 && collisions === 0) {
