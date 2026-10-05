@@ -5,6 +5,12 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      # coverage-v8 pins vitest as an exact peer, so the two cannot be bumped apart
+      vitest:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
   - package-ecosystem: github-actions
     directory: /
     schedule:
