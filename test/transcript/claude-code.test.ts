@@ -125,4 +125,13 @@ describe("parseClaudeCodeTranscript", () => {
   it("keeps the recorded max-turns stop measurable", () => {
     expect(parseClaudeCodeTranscript(fixture("invoked.ndjson")).usable).toBe(true);
   });
+
+  it("labels why a run is unusable with a reason code", () => {
+    const result = (event: object) => parseClaudeCodeTranscript(JSON.stringify(event)).unusableCode;
+
+    expect(parseClaudeCodeTranscript(fixture("not-logged-in.ndjson")).unusableCode).toBe("auth");
+    expect(result({ type: "result", subtype: "error_during_execution", is_error: true })).toBe("provider-error");
+    expect(result({ type: "system", subtype: "init" })).toBe("unsupported-transcript");
+    expect(parseClaudeCodeTranscript(fixture("invoked.ndjson")).unusableCode).toBeUndefined();
+  });
 });

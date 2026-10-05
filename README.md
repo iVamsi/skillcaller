@@ -171,6 +171,8 @@ answered every usable trigger run.
 | `--max-calls <n>` | Refuse to start a run that needs more agent calls than this | `1000` |
 | `--deadline <ms>` | Stop the whole run after this many milliseconds | (none) |
 | `--max-cost <usd>` | Stop the run once this invocation has spent this many dollars. Agents that report no cost never reach it | (none) |
+| `-o, --output <file>` | Write the report to a file instead of stdout. The file is replaced in one step, so a reader never sees half a report | (stdout) |
+| `--hide-prompts` | Replace prompt text with case ids, for reports shared outside the team | `false` |
 
 `run` checks that the agent CLI starts before the first prompt, so a missing CLI fails once instead
 of once per prompt. Each prompt has a case id derived from its text, so reordering a corpus keeps

@@ -57,7 +57,7 @@ export class CursorAdapter implements AgentAdapter {
       const transcript = parseCursorTranscript(result.stdout, skillsDir);
       if (!transcript.usable && result.code !== 0) {
         const detail = result.stderr.trim().slice(0, 300) || `exit code ${result.code}`;
-        return unusable(`cursor failed: ${detail}`);
+        return unusable(`cursor failed: ${detail}`, "agent-error");
       }
 
       return {
@@ -65,6 +65,7 @@ export class CursorAdapter implements AgentAdapter {
         ...(transcript.foreignSkills.length === 0 ? {} : { foreignSkills: transcript.foreignSkills }),
         usable: transcript.usable,
         ...(transcript.unusableReason === undefined ? {} : { unusableReason: transcript.unusableReason }),
+        ...(transcript.unusableCode === undefined ? {} : { unusableCode: transcript.unusableCode }),
       };
     } finally {
       rmSync(workspace, { recursive: true, force: true });

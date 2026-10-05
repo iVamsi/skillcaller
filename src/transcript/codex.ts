@@ -1,10 +1,12 @@
 import { resolve } from "node:path";
+import type { UnusableCode } from "../metrics/types.js";
 
 export interface CodexTranscriptResult {
   readonly invokedSkills: readonly string[];
   readonly foreignSkills: readonly string[];
   readonly usable: boolean;
   readonly unusableReason?: string;
+  readonly unusableCode?: UnusableCode;
 }
 
 interface CommandItem {
@@ -87,7 +89,7 @@ export function parseCodexTranscript(jsonl: string, packDir: string): CodexTrans
     invokedSkills: invoked,
     foreignSkills: foreign,
     usable: unusableReason === undefined,
-    ...(unusableReason === undefined ? {} : { unusableReason }),
+    ...(unusableReason === undefined ? {} : { unusableReason, unusableCode: "unsupported-transcript" as const }),
   };
 }
 

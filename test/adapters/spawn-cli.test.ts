@@ -2,7 +2,7 @@ import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { spawnCli } from "../../src/adapters/spawn-cli.js";
+import { spawnCli, spawnFailure, type SpawnFailure } from "../../src/adapters/spawn-cli.js";
 
 function stub(body: string): string {
   const path = join(mkdtempSync(join(tmpdir(), "skillcaller-spawn-")), "cli");
@@ -118,5 +118,14 @@ setTimeout(() => process.stdout.write(bytes.subarray(1)), 50);
     );
 
     expect(result.stdout).toBe("é");
+  });
+
+  it("labels each way the supervisor stops a run with a reason code", () => {
+    const stopped = (failure: SpawnFailure) => spawnFailure("cli", { stdout: "", stderr: "", code: null, failure }, 1);
+
+    expect(stopped("timeout")?.unusableCode).toBe("timeout");
+    expect(stopped("cancelled")?.unusableCode).toBe("cancelled");
+    expect(stopped("output-limit")?.unusableCode).toBe("output-limit");
+    expect(stopped("spawn")?.unusableCode).toBe("agent-missing");
   });
 });

@@ -1,9 +1,23 @@
+/** Why a run produced no measurement, in a form reports can count. */
+export type UnusableCode =
+  | "auth"
+  | "timeout"
+  | "cancelled"
+  | "agent-missing"
+  | "output-limit"
+  | "provider-error"
+  | "agent-error"
+  | "unsupported-transcript"
+  | "setup"
+  | "adapter-crash";
+
 export interface RunOutcome {
   readonly invokedSkills: readonly string[];
   /** Skills reached outside the pack under test. */
   readonly foreignSkills?: readonly string[];
   readonly usable: boolean;
   readonly unusableReason?: string;
+  readonly unusableCode?: UnusableCode;
   /** Undefined when the agent does not report cost. */
   readonly costUsd?: number;
   /** Served from the cache rather than run during this invocation. */
@@ -43,6 +57,11 @@ export interface SkillReport {
   readonly unusableRuns: number;
   /** Redacted unusable reasons, by run count. */
   readonly unusableReasons: Readonly<Record<string, number>>;
+  readonly unusableCodes: Readonly<Partial<Record<UnusableCode, number>>>;
+  /** Prompts times planned repeats. */
+  readonly expectedRuns: number;
+  /** Runs that finished, usable or not; a cancelled run did not finish. */
+  readonly completedRuns: number;
   readonly cachedRuns: number;
   /** Fresh runs whose agent reported no cost; they are missing from totalCostUsd. */
   readonly unpricedRuns: number;

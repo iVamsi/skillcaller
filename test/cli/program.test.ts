@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -429,5 +429,30 @@ describe("skillcaller run preflight", () => {
       vi.unstubAllEnvs();
     }
     expect(stderr).not.toMatch(/agent call/);
+  });
+
+  it("writes the report to --output instead of stdout", async () => {
+    const { packDir, scriptFile } = pack({ "do alpha": [["alpha"]], "do nothing": [[]] });
+    const output = join(mkdtempSync(join(tmpdir(), "skillcaller-out-")), "report.json");
+
+    await run(["run", packDir, "--agent", "fake", "--script", scriptFile, "--no-cache", "--format", "json", "--output", output]);
+
+    expect(stdout).toBe("");
+    const report = JSON.parse(readFileSync(output, "utf8")) as { passed: boolean; run: { durationMs: number } };
+    expect(report.passed).toBe(true);
+    expect(report.run.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("replaces prompt text with case ids under --hide-prompts", async () => {
+    // A false trigger names the prompt in its failure, so every format has prompt text to hide
+    const { packDir, scriptFile } = pack({ "do alpha": [["alpha"]], "do nothing": [["alpha"]] });
+
+    for (const format of ["json", "markdown", "terminal", "junit"]) {
+      stdout = "";
+      await run(["run", packDir, "--agent", "fake", "--script", scriptFile, "--no-cache", "--format", format, "--hide-prompts"]);
+
+      expect(stdout, format).not.toContain("do nothing");
+      expect(stdout, format).toMatch(/alpha\/[0-9a-f]{12}/);
+    }
   });
 });

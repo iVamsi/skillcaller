@@ -11,11 +11,27 @@ export interface RunInfo {
   /** Null when the agent picks its own default. */
   readonly model: string | null;
   readonly packDigest: string;
+  /** Wall time spent on agent calls. */
+  readonly durationMs?: number;
   /** Why the run stopped before every agent call finished. */
   readonly stoppedEarly?: string;
 }
 
 export const REPORT_SCHEMA_VERSION = 2;
+
+/**
+ * Replaces each prompt with its case id, in the prompt list and in failure messages, so a report
+ * can be shared without the corpus. Collisions and skill names are left as they are.
+ */
+export function hidePrompts(reports: readonly SkillReport[]): SkillReport[] {
+  return reports.map((report) => {
+    let failures = [...report.failures];
+    for (const prompt of report.prompts) {
+      failures = failures.map((failure) => failure.split(`"${prompt.prompt}"`).join(prompt.id));
+    }
+    return { ...report, failures, prompts: report.prompts.map((prompt) => ({ ...prompt, prompt: prompt.id })) };
+  });
+}
 
 export interface RenderOptions {
   readonly color?: boolean;

@@ -1,10 +1,12 @@
 import { resolve } from "node:path";
+import type { UnusableCode } from "../metrics/types.js";
 
 export interface AntigravityTranscriptResult {
   readonly invokedSkills: readonly string[];
   readonly foreignSkills: readonly string[];
   readonly usable: boolean;
   readonly unusableReason?: string;
+  readonly unusableCode?: UnusableCode;
   readonly costUsd: number;
 }
 
@@ -81,12 +83,20 @@ export function parseAntigravityTranscript(ndjson: string, packDir: string): Ant
       : !sawResult
         ? "transcript contains no result event; the run was truncated or the process died"
         : undefined;
+  const unusableCode: UnusableCode | undefined = authFailure
+    ? "auth"
+    : errorDetail !== undefined
+      ? "provider-error"
+      : !sawResult
+        ? "unsupported-transcript"
+        : undefined;
 
   return {
     invokedSkills: invoked,
     foreignSkills: foreign,
     usable: unusableReason === undefined,
     ...(unusableReason === undefined ? {} : { unusableReason }),
+    ...(unusableCode === undefined ? {} : { unusableCode }),
     costUsd: 0,
   };
 }

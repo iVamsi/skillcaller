@@ -78,7 +78,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       // --max-turns 1 exits non-zero even when the Skill call was observed
       if (!transcript.usable && result.code !== 0) {
         const detail = result.stderr.trim().slice(0, 300) || `exit code ${result.code}`;
-        return unusable(`claude failed: ${detail}`);
+        return unusable(`claude failed: ${detail}`, "agent-error");
       }
 
       const packSkills = new Set(readdirSync(skillsDir));
@@ -89,6 +89,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
         ...(foreignSkills.length === 0 ? {} : { foreignSkills }),
         usable: transcript.usable,
         ...(transcript.unusableReason === undefined ? {} : { unusableReason: transcript.unusableReason }),
+        ...(transcript.unusableCode === undefined ? {} : { unusableCode: transcript.unusableCode }),
         ...(transcript.costUsd === undefined ? {} : { costUsd: transcript.costUsd }),
       };
     } finally {

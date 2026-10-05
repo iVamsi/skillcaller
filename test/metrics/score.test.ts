@@ -221,4 +221,21 @@ describe("scoreSkill contamination", () => {
 
     expect(report.prompts[0]?.rate).toBe(1);
   });
+
+  it("counts unusable runs by reason code, and expected against completed runs", () => {
+    const report = scoreSkill({ ...corpus, runs: 2, shouldTrigger: ["a"], shouldNotTrigger: [] }, [
+      {
+        prompt: "a",
+        expectation: "trigger",
+        runs: [
+          { invokedSkills: [], usable: false, unusableReason: "claude timed out", unusableCode: "timeout" },
+          { invokedSkills: [], usable: false, unusableReason: "cancelled", unusableCode: "cancelled" },
+        ],
+      },
+    ]);
+
+    expect(report.unusableCodes).toEqual({ timeout: 1, cancelled: 1 });
+    expect(report.expectedRuns).toBe(2);
+    expect(report.completedRuns).toBe(1);
+  });
 });

@@ -1,10 +1,13 @@
 /** Skill tool_use blocks from `claude -p --output-format stream-json`. See fixtures/claude-code. */
 
+import type { UnusableCode } from "../metrics/types.js";
+
 export interface TranscriptResult {
   readonly invokedSkills: readonly string[];
   readonly visibleSkills: readonly string[];
   readonly usable: boolean;
   readonly unusableReason?: string;
+  readonly unusableCode?: UnusableCode;
   readonly costUsd?: number;
 }
 
@@ -88,12 +91,20 @@ export function parseClaudeCodeTranscript(ndjson: string): TranscriptResult {
       : !sawResult
         ? "transcript contains no result event; the run was truncated or the process died"
         : undefined;
+  const unusableCode: UnusableCode | undefined = authFailure
+    ? "auth"
+    : providerError !== undefined
+      ? "provider-error"
+      : !sawResult
+        ? "unsupported-transcript"
+        : undefined;
 
   return {
     invokedSkills: invoked,
     visibleSkills,
     usable: unusableReason === undefined,
     ...(unusableReason === undefined ? {} : { unusableReason }),
+    ...(unusableCode === undefined ? {} : { unusableCode }),
     ...(costUsd === undefined ? {} : { costUsd }),
   };
 }

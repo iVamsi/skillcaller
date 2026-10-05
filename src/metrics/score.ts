@@ -1,5 +1,5 @@
 import { caseId, type Corpus } from "../corpus/schema.js";
-import type { PromptOutcome, PromptReport, SkillReport } from "./types.js";
+import type { PromptOutcome, PromptReport, SkillReport, UnusableCode } from "./types.js";
 
 function percent(value: number): string {
   return `${(value * 100).toFixed(0)}%`;
@@ -101,10 +101,12 @@ export function scoreSkill(corpus: Corpus, outcomes: readonly PromptOutcome[]): 
   }
 
   const unusableReasons: Record<string, number> = {};
+  const unusableCodes: Partial<Record<UnusableCode, number>> = {};
   for (const run of allRuns) {
     if (run.usable) continue;
     const reason = redact(run.unusableReason ?? "no reason given");
     unusableReasons[reason] = (unusableReasons[reason] ?? 0) + 1;
+    if (run.unusableCode !== undefined) unusableCodes[run.unusableCode] = (unusableCodes[run.unusableCode] ?? 0) + 1;
   }
 
   return {
@@ -116,6 +118,9 @@ export function scoreSkill(corpus: Corpus, outcomes: readonly PromptOutcome[]): 
     failures,
     unusableRuns: allRuns.filter((run) => !run.usable).length,
     unusableReasons,
+    unusableCodes,
+    expectedRuns: outcomes.length * corpus.runs,
+    completedRuns: allRuns.filter((run) => run.unusableCode !== "cancelled").length,
     cachedRuns: allRuns.filter((run) => run.cached === true).length,
     unpricedRuns: allRuns.filter((run) => run.costUsd === undefined).length,
     totalCostUsd: allRuns.reduce((sum, run) => sum + (run.costUsd ?? 0), 0),

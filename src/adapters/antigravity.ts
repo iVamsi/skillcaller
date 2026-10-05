@@ -77,12 +77,12 @@ export class AntigravityAdapter implements AgentAdapter {
 
       const combined = `${result.stdout}\n${result.stderr}`;
       if (/authentication required/i.test(combined)) {
-        return unusable("agent reported it is not logged in; no skill decision was made");
+        return unusable("agent reported it is not logged in; no skill decision was made", "auth");
       }
 
       const transcript = parseAntigravityTranscript(result.stdout, plugin.skillsDir);
       if (!transcript.usable && result.code !== 0) {
-        return unusable(`agy failed: ${detail(result)}`);
+        return unusable(`agy failed: ${detail(result)}`, "agent-error");
       }
 
       return {
@@ -90,6 +90,7 @@ export class AntigravityAdapter implements AgentAdapter {
         ...(transcript.foreignSkills.length === 0 ? {} : { foreignSkills: transcript.foreignSkills }),
         usable: transcript.usable,
         ...(transcript.unusableReason === undefined ? {} : { unusableReason: transcript.unusableReason }),
+        ...(transcript.unusableCode === undefined ? {} : { unusableCode: transcript.unusableCode }),
       };
     } finally {
       rmSync(workspace, { recursive: true, force: true });
@@ -151,7 +152,7 @@ export class AntigravityAdapter implements AgentAdapter {
     const cleanup = await this.remove(record);
     const why =
       result.failure === "timeout" ? `timed out after ${PLUGIN_TIMEOUT_MS}ms` : `failed: ${detail(result)}`;
-    return unusable(`agy plugin install ${why}${cleanup === undefined ? "" : `; ${cleanup}`}`);
+    return unusable(`agy plugin install ${why}${cleanup === undefined ? "" : `; ${cleanup}`}`, "setup");
   }
 
   private async teardown(): Promise<void> {

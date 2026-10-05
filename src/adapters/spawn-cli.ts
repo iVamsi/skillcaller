@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
-import type { RunOutcome } from "../metrics/types.js";
+import type { RunOutcome, UnusableCode } from "../metrics/types.js";
 
 const MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
 /** How long output may keep flowing after the CLI exits or is killed. */
@@ -140,16 +140,16 @@ export function spawnFailure(label: string, result: SpawnResult, timeoutMs: numb
     case undefined:
       return undefined;
     case "timeout":
-      return unusable(`${label} timed out after ${timeoutMs}ms`);
+      return unusable(`${label} timed out after ${timeoutMs}ms`, "timeout");
     case "cancelled":
-      return unusable(`${label} was cancelled before it finished`);
+      return unusable(`${label} was cancelled before it finished`, "cancelled");
     case "output-limit":
-      return unusable(`${label} wrote more output than skillcaller reads, so its transcript is incomplete`);
+      return unusable(`${label} wrote more output than skillcaller reads, so its transcript is incomplete`, "output-limit");
     case "spawn":
-      return unusable(`${label} could not start: ${result.stderr.trim().slice(0, 300)}`);
+      return unusable(`${label} could not start: ${result.stderr.trim().slice(0, 300)}`, "agent-missing");
   }
 }
 
-export function unusable(reason: string): RunOutcome {
-  return { invokedSkills: [], usable: false, unusableReason: reason };
+export function unusable(reason: string, code: UnusableCode): RunOutcome {
+  return { invokedSkills: [], usable: false, unusableReason: reason, unusableCode: code };
 }

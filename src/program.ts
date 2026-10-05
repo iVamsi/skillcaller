@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Command } from "commander";
@@ -20,6 +20,7 @@ import { scoreSkill } from "./metrics/score.js";
 import type { RunOutcome, SkillReport } from "./metrics/types.js";
 import { loadPack, type Pack } from "./pack/load-pack.js";
 import {
+  hidePrompts,
   renderJUnit,
   renderJson,
   renderMarkdown,
@@ -78,6 +79,8 @@ interface RunFlags {
   readonly maxCalls: string;
   readonly deadline?: string;
   readonly maxCost?: string;
+  readonly output?: string;
+  readonly hidePrompts?: boolean;
 }
 
 const DEFAULT_MODEL = "claude-haiku-4-5-20251001";
@@ -277,7 +280,7 @@ async function measureUntilStopped(
   }
 
   if (pack.entries.length === 0) {
-    writeReport(flags.format, [], buildCollisionMatrix([]), pack.skillsWithoutCorpus, info);
+    writeReport(flags, [], buildCollisionMatrix([]), pack.skillsWithoutCorpus, { ...info, durationMs: 0 });
     process.exitCode = 1;
     return;
   }
@@ -286,6 +289,7 @@ async function measureUntilStopped(
   const corpora: CorpusOutcomes[] = [];
 
   let completedSkills = 0;
+  const started = performance.now();
   const allOutcomes = await runPackCorpora(pack.entries, adapter, {
     packDir: pack.root,
     ...(model === undefined ? {} : { model }),
@@ -326,18 +330,20 @@ async function measureUntilStopped(
   if (stoppedEarly !== undefined) {
     process.stderr.write(`skillcaller: stopped early (${stoppedEarly}); unfinished prompts were not measured\n`);
   }
-  const run: RunInfo = stoppedEarly === undefined ? info : { ...info, stoppedEarly };
-  writeReport(flags.format, reports, matrix, pack.skillsWithoutCorpus, run);
+  const durationMs = Math.round(performance.now() - started);
+  const run: RunInfo = { ...info, durationMs, ...(stoppedEarly === undefined ? {} : { stoppedEarly }) };
+  writeReport(flags, flags.hidePrompts === true ? hidePrompts(reports) : reports, matrix, pack.skillsWithoutCorpus, run);
   process.exitCode = stoppedEarly === undefined && runPassed(reports, matrix) ? 0 : 1;
 }
 
 function writeReport(
-  format: string,
+  flags: RunFlags,
   reports: readonly SkillReport[],
   matrix: CollisionMatrix,
   skippedSkills: readonly string[],
   run: RunInfo,
 ): void {
+  const format = flags.format;
   const output =
     format === "json"
       ? renderJson(reports, matrix, skippedSkills, run)
@@ -349,7 +355,14 @@ function writeReport(
               skippedSkills,
               ...(run.stoppedEarly === undefined ? {} : { stoppedEarly: run.stoppedEarly }),
             });
-  process.stdout.write(`${output}\n`);
+  if (flags.output === undefined) {
+    process.stdout.write(`${output}\n`);
+    return;
+  }
+  // Renamed into place, so a reader never sees a half-written report
+  const temp = `${flags.output}.${process.pid}.tmp`;
+  writeFileSync(temp, `${output}\n`);
+  renameSync(temp, flags.output);
 }
 
 export function createProgram(): Command {
@@ -380,6 +393,8 @@ export function createProgram(): Command {
     .option("--max-calls <n>", "refuse to start a run needing more agent calls than this", "1000")
     .option("--deadline <ms>", "stop the whole run after this many milliseconds")
     .option("--max-cost <usd>", "stop the run once fresh spend reaches this many dollars")
+    .option("-o, --output <file>", "write the report to this file instead of stdout")
+    .option("--hide-prompts", "replace prompt text with case ids, for reports shared outside the team")
     .description("Measure how reliably each skill triggers")
     .action(runPack);
 
