@@ -456,3 +456,22 @@ describe("skillcaller run preflight", () => {
     }
   });
 });
+
+describe("skillcaller compare", () => {
+  it("exits 1 when the candidate regressed against the baseline", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "skillcaller-compare-cli-"));
+    const good = pack({ "do alpha": [["alpha"]], "do nothing": [[]] });
+    const bad = pack({ "do alpha": [[]], "do nothing": [[]] });
+    const runTo = (p: { packDir: string; scriptFile: string }, file: string) =>
+      run(["run", p.packDir, "--agent", "fake", "--script", p.scriptFile, "--no-cache", "--format", "json", "--output", join(dir, file)]);
+    await runTo(good, "base.json");
+    await runTo(bad, "candidate.json");
+
+    process.exitCode = 0;
+    await run(["compare", join(dir, "base.json"), join(dir, "candidate.json"), "--format", "markdown"]);
+
+    expect(process.exitCode).toBe(1);
+    expect(stdout).toMatch(/Regressions/);
+  });
+});
+

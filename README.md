@@ -154,6 +154,7 @@ answered every usable trigger run.
 | `skillcaller validate [pack]` | Check skill names, descriptions, corpora, links, and size limits without calling an agent |
 | `skillcaller plan [pack]` | List every case, its id, repeats, timeout, and how many calls the cache would answer, without calling an agent |
 | `skillcaller doctor --agent <agent>` | Check that the agent CLI starts, lists the flags skillcaller passes, and show what it can and cannot isolate |
+| `skillcaller compare <baseline.json> <candidate.json>` | Report regressions between two JSON reports; exits 1 on a regression or when the reports used a different agent or model |
 
 ### Useful CLI Flags
 
@@ -176,7 +177,9 @@ answered every usable trigger run.
 
 `run` checks that the agent CLI starts before the first prompt, so a missing CLI fails once instead
 of once per prompt. Each prompt has a case id derived from its text, so reordering a corpus keeps
-ids. `plan` and the JSON report use the same ids.
+ids, and `plan`, the JSON report, and `compare` all use the same ids. `compare --max-drop` (default
+`0.1`) sets how far a case may worsen before it counts as a regression. A prompt removed from a
+failing skill also counts, so deleting a failing case cannot pass as an improvement.
 
 A run stopped by `--deadline`, `--max-cost`, or Ctrl-C kills the running agents, marks the report
 as stopped early (`run.stoppedEarly` in JSON), and exits 1. A prompt is measured only when at least

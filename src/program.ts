@@ -12,6 +12,7 @@ import type { AgentAdapter } from "./adapters/types.js";
 import { CachingAdapter } from "./cache/caching-adapter.js";
 import { positiveInt, rate } from "./cli-options.js";
 import { AgentUnavailableError } from "./adapters/spawn-cli.js";
+import { compareReports, loadReport, renderComparison } from "./commands/compare.js";
 import { diagnose, renderDiagnosis } from "./commands/doctor.js";
 import { planPack, renderPlan } from "./commands/plan.js";
 import { validatePack } from "./commands/validate.js";
@@ -141,6 +142,19 @@ async function agentVersion(adapter: AgentAdapter, agent: string): Promise<strin
     }
     return null;
   }
+}
+
+function compareCommand(baseline: string, candidate: string, flags: { format: string; maxDrop: string }): void {
+  if (flags.format !== "terminal" && flags.format !== "markdown" && flags.format !== "json") {
+    throw new Error(`--format expects terminal, markdown or json, got "${flags.format}"`);
+  }
+  const comparison = compareReports(loadReport(baseline), loadReport(candidate), {
+    maxDrop: rate(flags.maxDrop, 0.1, "--max-drop"),
+  });
+  const output =
+    flags.format === "json" ? JSON.stringify(comparison, null, 2) : renderComparison(comparison, flags.format);
+  process.stdout.write(`${output}\n`);
+  process.exitCode = comparison.comparable && comparison.regressions.length === 0 ? 0 : 1;
 }
 
 async function doctorCommand(flags: { agent: string; format: string }): Promise<void> {
@@ -402,6 +416,15 @@ export function createProgram(): Command {
     .option("-f, --format <format>", "terminal or json", "terminal")
     .description("Show what a run would do, without calling an agent")
     .action(planCommand);
+
+  program
+    .command("compare")
+    .argument("<baseline>", "JSON report from the baseline run")
+    .argument("<candidate>", "JSON report from the candidate run")
+    .option("-f, --format <format>", "terminal, markdown or json", "terminal")
+    .option("--max-drop <rate>", "how much a case may worsen before it counts as a regression", "0.1")
+    .description("Find regressions between two JSON reports")
+    .action(compareCommand);
 
   program
     .command("doctor")
